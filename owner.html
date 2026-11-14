@@ -126,7 +126,7 @@ function paint() {
 function newClient() {
   dialog('<h3>New client</h3><p class="hint">Creates a separate, private system for this business and its first administrator.</p>' +
     '<div class="row2"><label>Business name<input id="n"></label><label>Business code (for sign-in)<input id="c" placeholder="e.g. bluebar" autocapitalize="off"></label></div>' +
-    '<div class="row2"><label>Type<select id="t"><option>hotel</option></select></label><label>Free trial (days)<input id="d" type="number" value="14" min="1"></label></div>' +
+    '<div class="row2"><label>Type<select id="t"><option value="hotel">Hotel</option><option value="shop">Shop / boutique</option></select></label><label>Free trial (days)<input id="d" type="number" value="14" min="1"></label></div>' +
     '<div class="row2"><label>Administrator username<input id="au" value="admin" autocapitalize="off"></label><label>Administrator full name<input id="an"></label></div>' +
     '<label>Administrator password (8+ characters)<input id="ap" type="text" autocomplete="off"></label>' +
     '<div class="row2"><label>Price (for your notes)<input id="pr" placeholder="e.g. 30,000 / month"></label><label>Grace days after due date<input id="g" type="number" value="5" min="0"></label></div>' +
