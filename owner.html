@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Owner console</title>
+<script src="config.js"></script>
+<style>
+:root{--bg:#f4f6fa;--card:#fff;--ink:#14213d;--mute:#667085;--line:#e3e7ee;--navy:#0b2545;--brand:#1d4ed8;--ok:#15803d;--okbg:#dcfce7;--warn:#a16207;--warnbg:#fef3c7;--grace:#c2410c;--gracebg:#ffedd5;--bad:#b91c1c;--badbg:#fee2e2;--r:12px}
+@media (prefers-color-scheme:dark){:root{--bg:#0d1420;--card:#151f30;--ink:#e8edf6;--mute:#93a0b6;--line:#26344b;--navy:#081529;--brand:#6ea0ff;--ok:#4ade80;--okbg:#12361f;--warn:#fbbf24;--warnbg:#3a2d0a;--grace:#fb923c;--gracebg:#3b1f0c;--bad:#f87171;--badbg:#3d1414}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+header{background:var(--navy);color:#fff;padding:14px 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+header h1{margin:0;font-size:18px;flex:1}
+header button{background:#ffffff1f;color:#fff;border:0}
+main{max-width:1180px;margin:0 auto;padding:16px}
+button,.btn{font:inherit;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:9px;padding:8px 13px;cursor:pointer}
+button.primary{background:var(--brand);border-color:var(--brand);color:#fff}
+button.danger{color:var(--bad)}
+button.small{padding:5px 9px;font-size:13px}
+button:disabled{opacity:.5;cursor:default}
+input,select,textarea{font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:9px;padding:9px 11px;width:100%}
+label{display:block;font-size:13px;color:var(--mute);margin:10px 0 0}
+label input,label select,label textarea{margin-top:4px;color:var(--ink)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:16px}
+.login{max-width:380px;margin:12vh auto 0}
+.login h2{margin:0 0 4px}
+.hint{color:var(--mute);font-size:13px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px}
+.kpi span{display:block;color:var(--mute);font-size:12px;text-transform:uppercase;letter-spacing:.4px}
+.kpi b{font-size:24px}
+.bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.bar input{max-width:260px}
+.chips button.on{background:var(--navy);color:#fff;border-color:var(--navy)}
+.tbl{overflow-x:auto}
+table{width:100%;border-collapse:collapse;min-width:860px}
+th{font-size:12px;color:var(--mute);text-transform:uppercase;letter-spacing:.4px;text-align:left;padding:8px 10px;border-bottom:1px solid var(--line)}
+td{padding:10px;border-bottom:1px solid var(--line);vertical-align:middle}
+tr:last-child td{border-bottom:0}
+td small{color:var(--mute)}
+.pill{display:inline-block;border-radius:99px;padding:2px 10px;font-size:12px;font-weight:600}
+.p-ok{background:var(--okbg);color:var(--ok)}.p-soon{background:var(--warnbg);color:var(--warn)}.p-grace{background:var(--gracebg);color:var(--grace)}.p-blocked{background:var(--badbg);color:var(--bad)}
+.acts{display:flex;gap:6px;flex-wrap:wrap}
+dialog{border:1px solid var(--line);border-radius:14px;background:var(--card);color:var(--ink);padding:18px;width:min(520px,94vw)}
+dialog::backdrop{background:#0008}
+dialog h3{margin:0 0 6px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.dlgbtn{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
+.note{background:var(--warnbg);color:var(--warn);border-radius:9px;padding:8px 11px;font-size:13px;margin-top:10px}
+#toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);display:flex;flex-direction:column;gap:6px;z-index:99}
+#toast div{background:#14213d;color:#fff;border-radius:9px;padding:9px 14px;font-size:14px}
+#toast div.bad{background:var(--bad)}
+.empty{padding:30px;text-align:center;color:var(--mute)}
+@media(max-width:640px){.row2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div id="app"></div><div id="toast"></div>
+<dialog id="dlg"></dialog>
+<script>
+var TOKEN = null, DATA = null, FILTER = 'all', Q = '';
+try { TOKEN = sessionStorage.getItem('owner_token'); } catch (e) {}
+var $ = function (s, r) { return (r || document).querySelector(s); };
+var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
+var num = function (n) { return Number(n || 0).toLocaleString('en-US'); };
+function toast(m, bad) { var d = document.createElement('div'); d.textContent = m; if (bad) d.className = 'bad'; $('#toast').appendChild(d); setTimeout(function () { d.remove(); }, bad ? 6000 : 2800); }
+function call(fn, args) {
+  return fetch(window.HOTEL_API, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ fn: fn, args: args || [] }) }).then(function (r) { return r.json(); }).then(function (r) {
+    if (r.expired) { TOKEN = null; try { sessionStorage.removeItem('owner_token'); } catch (e) {} draw(); throw new Error('Please sign in again.'); }
+    if (!r.ok) throw new Error(r.error || 'Something went wrong.'); return r.data;
+  });
+}
+var owner = function (fn) { return call(fn, [TOKEN].concat([].slice.call(arguments, 1))); };
+var act = function (p, done) { return p.then(function (r) { if (done) done(r); }, function (e) { toast(e.message, true); }); };
+
+/* ---- dates (same rules as the server) ---- */
+var dnum = function (s) { var a = s.split('-').map(Number); return Math.round(Date.UTC(a[0], a[1] - 1, a[2]) / 86400000); };
+var dstr = function (n) { var d = new Date(n * 86400000); return d.getUTCFullYear() + '-' + ('0' + (d.getUTCMonth() + 1)).slice(-2) + '-' + ('0' + d.getUTCDate()).slice(-2); };
+var addMonths = function (s, n) { var a = s.split('-').map(Number), y = a[0], m = a[1] - 1 + n, d = a[2]; y += Math.floor(m / 12); m = ((m % 12) + 12) % 12; var last = new Date(Date.UTC(y, m + 1, 0)).getUTCDate(); return y + '-' + ('0' + (m + 1)).slice(-2) + '-' + ('0' + Math.min(d, last)).slice(-2); };
+
+function dialog(html, buttons, onOpen) {
+  var d = $('#dlg'); d.innerHTML = html + '<div class="dlgbtn"></div>'; var bar = $('.dlgbtn', d);
+  buttons.forEach(function (b) { var x = document.createElement('button'); x.textContent = b[0]; x.className = b[2] || ''; x.onclick = function () { if (!b[1]) return d.close(); var r = b[1](d); if (r && r.then) { x.disabled = true; r.then(function (keep) { x.disabled = false; if (keep !== false) d.close(); }, function (e) { x.disabled = false; toast(e.message, true); }); } else if (r !== false) d.close(); }; bar.appendChild(x); });
+  d.showModal(); if (onOpen) onOpen(d);
+}
+var val = function (d, id) { return $('#' + id, d).value; };
+
+function drawLogin() {
+  $('#app').innerHTML = '<div class="login card"><h2>Owner console</h2><p class="hint">Sign in with your owner key.</p><label>Owner key<input id="k" type="password" autocomplete="current-password"></label><div style="margin-top:14px"><button class="primary" id="go" style="width:100%">Sign in</button></div></div>';
+  var go = function () { act(call('ownerLogin', [$('#k').value]), function (r) { TOKEN = r.token; try { sessionStorage.setItem('owner_token', TOKEN); } catch (e) {} draw(); }); };
+  $('#go').onclick = go; $('#k').onkeydown = function (e) { if (e.key === 'Enter') go(); };
+}
+function stateOf(c) {
+  if (c.status === 'SUSPENDED') return ['blocked', 'Switched off'];
+  if (c.level === 'blocked') return ['blocked', 'Unpaid - off'];
+  if (c.level === 'grace') return ['grace', 'Grace period'];
+  if (c.level === 'soon') return ['soon', 'Due soon'];
+  return ['ok', 'Active'];
+}
+async function draw() {
+  if (!TOKEN) return drawLogin();
+  try { DATA = await owner('ownerList'); } catch (e) { if (TOKEN) toast(e.message, true); return; }
+  var cs = DATA.clients, behind = cs.filter(function (c) { return c.schema_version < c.latest_version; }).length, all = cs.length, on = cs.filter(function (c) { return !c.blocked; }).length, soon = cs.filter(function (c) { return c.level === 'soon'; }).length, grace = cs.filter(function (c) { return c.level === 'grace'; }).length, off = cs.filter(function (c) { return c.blocked; }).length;
+  var total = cs.reduce(function (s, c) { return s + c.paid_total; }, 0);
+  $('#app').innerHTML = '<header><h1>Owner console</h1><button id="ps">My details</button><button id="rf">Refresh</button><button id="so">Sign out</button></header><main>' +
+    '<div class="kpis"><div class="kpi"><span>Clients</span><b>' + all + '</b></div><div class="kpi"><span>Running</span><b>' + on + '</b></div><div class="kpi"><span>Due within 7 days</span><b>' + soon + '</b></div><div class="kpi"><span>In grace period</span><b>' + grace + '</b></div><div class="kpi"><span>Switched off</span><b>' + off + '</b></div><div class="kpi"><span>Payments recorded</span><b>' + num(total) + '</b></div><div class="kpi"><span>Waiting for upgrade</span><b>' + behind + '</b></div></div>' +
+    '<div class="bar"><input id="q" placeholder="Search name or code" value="' + esc(Q) + '"><span class="chips" id="ch">' + [['all', 'All'], ['attention', 'Needs attention'], ['off', 'Switched off']].map(function (f) { return '<button data-f="' + f[0] + '" class="' + (FILTER === f[0] ? 'on' : '') + '">' + f[1] + '</button>'; }).join(' ') + '</span><span style="flex:1"></span>' + (behind ? '<button id="up" class="danger">Upgrade ' + behind + ' client(s)</button>' : '<button id="up">Check for upgrades</button>') + '<button class="primary" id="nc">New client</button></div>' +
+    '<div class="card tbl" id="list"></div></main>';
+  $('#so').onclick = function () { TOKEN = null; try { sessionStorage.removeItem('owner_token'); } catch (e) {} draw(); };
+  $('#rf').onclick = draw; $('#nc').onclick = newClient; $('#up').onclick = upgradeAll; $('#ps').onclick = providerForm;
+  $('#q').oninput = function () { Q = this.value; paint(); }; $('#ch').onclick = function (e) { var b = e.target.closest('button'); if (b) { FILTER = b.dataset.f; draw(); } };
+  paint();
+}
+function paint() {
+  var s = Q.toLowerCase(), rows = DATA.clients.filter(function (c) { return (!s || (c.name + ' ' + c.code).toLowerCase().indexOf(s) >= 0) && (FILTER === 'all' || (FILTER === 'off' ? c.blocked : (c.level !== 'ok' || c.blocked))); });
+  if (!rows.length) { $('#list').innerHTML = '<div class="empty">' + (DATA.clients.length ? 'Nobody matches.' : 'No clients yet. Press "New client".') + '</div>'; return; }
+  $('#list').innerHTML = '<table><tr><th>Client</th><th>Status</th><th>Paid until</th><th>Last sign-in</th><th>Users</th><th>Price</th><th></th></tr>' + rows.map(function (c) {
+    var st = stateOf(c), left = c.days_left === null ? '' : (c.days_left >= 0 ? c.days_left + ' day(s) left' : -c.days_left + ' day(s) late');
+    return '<tr><td><b>' + esc(c.name) + '</b>' + (c.is_default ? ' <small>(default)</small>' : '') + '<br><small>' + esc(c.code) + ' &middot; ' + esc(c.type) + (c.server ? ' &middot; server ' + esc(c.server) : '') + (c.domain ? ' &middot; ' + esc(c.domain) : '') + '</small>' + (c.schema_version < c.latest_version ? '<br><small style="color:var(--grace)">needs upgrade</small>' : '') + '</td><td><span class="pill p-' + st[0] + '">' + st[1] + '</span></td><td>' + esc(c.paid_until || '-') + '<br><small>' + esc(left) + '</small></td><td>' + esc(c.last_login_at || 'never') + '</td><td>' + (c.users == null ? '-' : c.users) + '</td><td>' + esc(c.price || '') + '<br><small>' + num(c.paid_total) + ' paid</small></td>' +
+      '<td><div class="acts"><button class="small primary" data-a="renew" data-i="' + c.id + '">Renew</button><button class="small" data-a="more" data-i="' + c.id + '">More</button></div></td></tr>'; }).join('') + '</table>';
+  $('#list').onclick = function (e) { var b = e.target.closest('button[data-a]'); if (!b) return; var c = DATA.clients.filter(function (x) { return x.id === +b.dataset.i; })[0]; (b.dataset.a === 'renew' ? renew : more)(c); };
+}
+
+function newClient() {
+  dialog('<h3>New client</h3><p class="hint">Creates a separate, private system for this business and its first administrator.</p>' +
+    '<div class="row2"><label>Business name<input id="n"></label><label>Business code (for sign-in)<input id="c" placeholder="e.g. bluebar" autocapitalize="off"></label></div>' +
+    '<div class="row2"><label>Type<select id="t"><option>hotel</option></select></label><label>Free trial (days)<input id="d" type="number" value="14" min="1"></label></div>' +
+    '<div class="row2"><label>Administrator username<input id="au" value="admin" autocapitalize="off"></label><label>Administrator full name<input id="an"></label></div>' +
+    '<label>Administrator password (8+ characters)<input id="ap" type="text" autocomplete="off"></label>' +
+    '<div class="row2"><label>Price (for your notes)<input id="pr" placeholder="e.g. 30,000 / month"></label><label>Grace days after due date<input id="g" type="number" value="5" min="0"></label></div>' +
+    '<div class="row2"><label>Their own web address (optional)<input id="dm" placeholder="system.theirbusiness.com" autocapitalize="off"></label><label>Where the data lives<select id="sv"><option value="">Main server</option>' + (DATA.servers || []).map(function (x) { return '<option>' + esc(x) + '</option>'; }).join('') + '</select></label></div>' +
+    '<label>Contact<input id="ct" placeholder="phone, name"></label><label>Notes<textarea id="no" rows="2"></textarea></label>',
+    [['Cancel'], ['Create client', function (d) { return owner('ownerCreate', { name: val(d, 'n'), code: val(d, 'c'), type: val(d, 't'), trial_days: val(d, 'd'), admin_username: val(d, 'au'), admin_name: val(d, 'an'), admin_password: val(d, 'ap'), price: val(d, 'pr'), grace_days: val(d, 'g'), contact: val(d, 'ct'), notes: val(d, 'no'), domain: val(d, 'dm'), server: val(d, 'sv') }).then(function (r) { toast('Client created. Sign-in code: ' + r.code); draw(); }); }, 'primary']]);
+}
+function renew(c) {
+  var td = DATA.today, late = c.paid_until && dnum(td) > dnum(c.paid_until) + c.grace_days, base = c.paid_until && !late ? c.paid_until : td;
+  dialog('<h3>Record payment - ' + esc(c.name) + '</h3><p class="hint">Currently paid until <b>' + esc(c.paid_until || 'not set') + '</b>' + (late ? ' (switched off for non-payment: the new period counts from today)' : '') + '.</p>' +
+    '<div class="row2"><label>Months paid<select id="m">' + [1, 2, 3, 6, 12].map(function (m) { return '<option value="' + m + '">' + m + ' month' + (m > 1 ? 's' : '') + '</option>'; }).join('') + '<option value="0">Choose an exact date</option></select></label><label>Amount received<input id="a" inputmode="numeric" placeholder="e.g. 30000"></label></div>' +
+    '<label id="ul" style="display:none">New paid-until date<input id="u" type="date"></label><p class="hint" id="pv"></p><label>Note (how it was paid)<input id="nt" placeholder="Cash, MoMo ref..."></label>',
+    [['Cancel'], ['Save payment and switch on', function (d) { var m = +val(d, 'm'); return owner('ownerRenew', c.id, { months: m, until: m ? '' : val(d, 'u'), amount: val(d, 'a') || 0, note: val(d, 'nt') }).then(function (r) { toast(c.name + ' is paid until ' + r.paid_until + '.'); draw(); }); }, 'primary']],
+    function (d) { var up = function () { var m = +val(d, 'm'); $('#ul', d).style.display = m ? 'none' : 'block'; $('#pv', d).innerHTML = m ? 'New paid-until date: <b>' + addMonths(base, m) + '</b>' : ''; }; $('#m', d).onchange = up; up(); });
+}
+function more(c) {
+  var off = c.status === 'SUSPENDED';
+  dialog('<h3>' + esc(c.name) + '</h3><p class="hint">Code <b>' + esc(c.code) + '</b> &middot; created ' + esc(c.created_at || '') + (c.contact ? ' &middot; ' + esc(c.contact) : '') + '</p>' + (c.notes ? '<p class="hint">' + esc(c.notes) + '</p>' : '') +
+    '<div class="acts" style="margin-top:8px"><button data-a="pay">Payment history</button><button data-a="edit">Edit details</button><button data-a="pw">Reset administrator password</button><button data-a="link">Copy sign-in link</button><button data-a="exp">Download all their data</button>' + '<button class="' + (off ? '' : 'danger') + '" data-a="' + (off ? 'on' : 'off') + '">' + (off ? 'Switch on' : 'Switch off now') + '</button>' + '</div>',
+    [['Close']], function (d) { d.onclick = function (e) { var b = e.target.closest('button[data-a]'); if (!b) return; d.close(); ({ pay: payments, edit: edit, pw: resetPw, link: link, exp: exportData, on: function (x) { setStatus(x, 'ACTIVE'); }, off: function (x) { setStatus(x, 'SUSPENDED'); } })[b.dataset.a](c); }; });
+}
+function setStatus(c, s) { if (s === 'SUSPENDED' && !confirm('Switch off ' + c.name + ' now? Nobody there will be able to use the system until you switch it on.' + (c.is_default ? '\n\nThis is YOUR OWN default business: your hotel staff will be locked out too. You can switch it on again from this page.' : ''))) return; act(owner('ownerSetStatus', c.id, s), function () { toast(c.name + (s === 'ACTIVE' ? ' is switched on.' : ' is switched off.')); draw(); }); }
+function link(c) { var u = c.domain ? 'https://' + c.domain + '/' : location.href.replace(/owner\.html.*$/, '') + 'index.html?code=' + encodeURIComponent(c.code); (navigator.clipboard ? navigator.clipboard.writeText(u) : Promise.reject()).then(function () { toast('Link copied: ' + u); }, function () { prompt('Copy this link', u); }); }
+function payments(c) { act(owner('ownerPayments', c.id), function (rows) { dialog('<h3>Payments - ' + esc(c.name) + '</h3>' + (rows.length ? '<table style="min-width:0"><tr><th>Date</th><th>Amount</th><th>Months</th><th>Until</th><th>Note</th></tr>' + rows.map(function (r) { return '<tr><td>' + esc(r.paid_on) + '</td><td>' + num(r.amount) + '</td><td>' + r.months + '</td><td>' + esc(r.until_after) + '</td><td>' + esc(r.note) + '</td></tr>'; }).join('') + '</table>' : '<p class="hint">No payments recorded yet.</p>'), [['Close']]); }); }
+function edit(c) {
+  dialog('<h3>Edit - ' + esc(c.name) + '</h3><div class="row2"><label>Business name<input id="n" value="' + esc(c.name) + '"></label><label>Business code (sign-in key)<input id="cd" value="' + esc(c.code) + '" autocapitalize="off"></label></div><label style="display:flex;gap:8px;align-items:center;color:var(--ink)"><input type="checkbox" id="df" style="width:auto;margin:0"' + (c.is_default ? ' checked' : '') + '> Staff can sign in without typing the business code (only one business can be this)</label><div class="row2"><label>Price<input id="pr" value="' + esc(c.price) + '"></label><label>Grace days<input id="g" type="number" min="0" value="' + c.grace_days + '"></label></div><label>Their own web address<input id="dm" value="' + esc(c.domain) + '" placeholder="system.theirbusiness.com" autocapitalize="off"></label><label>Contact<input id="ct" value="' + esc(c.contact) + '"></label><label>Notes<textarea id="no" rows="3">' + esc(c.notes) + '</textarea></label>',
+    [['Cancel'], ['Save', function (d) { return owner('ownerUpdate', c.id, { name: val(d, 'n'), code: val(d, 'cd'), is_default: $('#df', d).checked, price: val(d, 'pr'), grace_days: val(d, 'g'), contact: val(d, 'ct'), notes: val(d, 'no'), domain: val(d, 'dm') }).then(function () { toast('Saved.'); draw(); }); }, 'primary']]);
+}
+function resetPw(c) {
+  act(owner('ownerAdmins', c.id), function (admins) {
+    dialog('<h3>Reset password - ' + esc(c.name) + '</h3><p class="hint">Use this when the client has forgotten the administrator password. Give them the new password and ask them to change it after signing in.</p><label>User<select id="u">' + admins.map(function (a) { return '<option value="' + esc(a.username) + '">' + esc(a.username) + ' (' + esc(a.role.toLowerCase()) + ')</option>'; }).join('') + '</select></label><label>New password (8+ characters)<input id="p" autocomplete="off"></label>',
+      [['Cancel'], ['Set new password', function (d) { return owner('ownerResetAdmin', c.id, val(d, 'u'), val(d, 'p')).then(function () { toast('Password changed.'); }); }, 'primary']]);
+  });
+}
+function upgradeAll() {
+  act(owner('ownerUpgrade'), function (r) {
+    var n = r.results.filter(function (x) { return x.ok && !x.skipped; }).length, bad = r.results.filter(function (x) { return !x.ok; });
+    dialog('<h3>Upgrade</h3><p>' + (n ? n + ' client(s) upgraded to version ' + r.latest + '.' : 'Every client is already up to date (version ' + r.latest + ').') + '</p>' + (bad.length ? '<div class="note">Could not upgrade: ' + bad.map(function (x) { return esc(x.code) + ' (' + esc(x.error) + ')'; }).join('; ') + '. The others were not affected. Press the button again after fixing.</div>' : ''), [['Close']]);
+    draw();
+  });
+}
+function exportData(c) {
+  act(owner('ownerExport', c.id), function (r) {
+    var a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(r, null, 1)], { type: 'application/json' })); a.download = c.code + '-data-' + (r.exported_at || '').slice(0, 10) + '.json'; document.body.appendChild(a); a.click(); a.remove(); toast('Download started. Passwords are not included.');
+  });
+}
+function providerForm() {
+  var p = DATA.provider || {};
+  dialog('<h3>My details</h3><p class="hint">Shown to a client when their system is switched off or about to be, so they know who to pay.</p><label>My name or company<input id="n" value="' + esc(p.provider_name || '') + '"></label><label>Phone / email for payments<input id="c" value="' + esc(p.provider_contact || '') + '"></label>',
+    [['Cancel'], ['Save', function (d) { return owner('ownerSettings', { provider_name: val(d, 'n'), provider_contact: val(d, 'c') }).then(function () { toast('Saved.'); draw(); }); }, 'primary']]);
+}
+draw();
+</script>
+</body>
+</html>
