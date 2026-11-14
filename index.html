@@ -970,7 +970,7 @@ PAGES.restaurant = async function (el) {
 
 PAGES.reports = async function (el) {
   var f = SUB.rp = SUB.rp || { from: TODAY.slice(0, 8) + '01', to: TODAY };
-  el.innerHTML = '<h2>Reports</h2><div class="bar"><select id="rsel" style="min-width:260px"></select><label>From <input type="date" id="f" value="' + f.from + '"></label><label>To <input type="date" id="t" value="' + f.to + '"></label><button class="btn" data-q="today">Today</button><button class="btn" data-q="7">Last 7 days</button><button class="btn" data-q="month">This month</button><button class="btn" data-q="last">Last month</button><button class="btn" data-q="year">This year</button><button class="btn" onclick="window.print()">Print</button></div><div id="out"></div>';
+  el.innerHTML = '<h2>Reports</h2><div class="bar"><select id="rsel" style="min-width:260px"></select><label>From <input type="date" id="f" value="' + f.from + '"></label><label>To <input type="date" id="t" value="' + f.to + '"></label><button class="btn" data-q="today">Today</button><button class="btn" data-q="7">Last 7 days</button><button class="btn" data-q="month">This month</button><button class="btn" data-q="last">Last month</button><button class="btn" data-q="year">This year</button><input id="rq" placeholder="Search this report (for example: table)" style="min-width:220px"><button class="btn" onclick="window.print()">Print</button></div><div id="out"></div>';
   var load = async function () {
     f.from = $('#f', el).value; f.to = $('#t', el).value; f.rep = $('#rsel', el).value;
     if (f.rep !== 'revenue') return genericReport(el, f);
@@ -989,22 +989,35 @@ PAGES.reports = async function (el) {
   var list = await call('reportList'), grp = {}; list.forEach(function (r) { (grp[r.group] = grp[r.group] || []).push(r); });
   $('#rsel', el).innerHTML = Object.keys(grp).map(function (g) { return '<optgroup label="' + esc(g) + '">' + grp[g].map(function (r) { return '<option value="' + r.key + '">' + esc(r.label) + '</option>'; }).join('') + '</optgroup>'; }).join('');
   $('#rsel', el).value = f.rep && list.some(function (r) { return r.key === f.rep; }) ? f.rep : (list.some(function (r) { return r.key === 'revenue'; }) ? 'revenue' : (list[0] ? list[0].key : ''));
-  $('#rsel', el).onchange = load;
+  $('#rsel', el).onchange = load; $('#rq', el).oninput = function () { if ($('#rsel', el).value !== 'revenue') renderGeneric(el, f); };
   $('#f', el).onchange = load; $('#t', el).onchange = load; await load();
 };
 
 var REP_FMT = { n: function (v) { return num(v, 1); }, m: function (v) { return num(v); }, p: function (v) { return num(v, 1) + ' %'; } };
+var GR = null;
 async function genericReport(el, f) {
-  var r = await call('reportRun', f.rep, f.from, f.to), out = $('#out', el);
+  GR = await call('reportRun', f.rep, f.from, f.to); renderGeneric(el, f);
+}
+function renderGeneric(el, f) {
+  var r = GR, out = $('#out', el); if (!r) return; var term = ($('#rq', el) ? $('#rq', el).value : '').trim().toLowerCase();
   var cell = function (c, row) { var v = row[c.k]; if (v === undefined || v === null || v === '') return ''; return c.t && REP_FMT[c.t] ? REP_FMT[c.t](v) : esc(v); };
-  out.innerHTML = '<h3 style="margin:0 0 8px">' + esc(r.title) + ' <span class="hint">' + esc(r.period) + '</span></h3><div class="grid">' + r.kpis.map(function (k) { return kpi(k.l, k.t === 'm' ? money(k.v) : k.t === 'p' ? num(k.v, 1) + ' %' : num(k.v, 1)); }).join('') + '</div>' +
-    r.sections.map(function (sec, i) {
-      var rows = sec.rows.concat(sec.total ? [sec.total] : []);
-      return '<div class="card"><h3>' + esc(sec.title) + ' <span class="hint">(' + sec.rows.length + ')</span><button class="btn small" data-csv="' + i + '" style="float:right">CSV</button></h3>' + (!sec.rows.length ? '<p class="hint">Nothing in this period.</p>' :
+  var hit = function (sec, row) { return sec.cols.some(function (c) { var v = row[c.k]; return v !== undefined && v !== null && String(v).toLowerCase().indexOf(term) >= 0; }); };
+  var view = r.sections.map(function (sec, i) {
+    var rows = term ? sec.rows.filter(function (row) { return hit(sec, row); }) : sec.rows, tot = sec.total;
+    if (term && rows.length) { var nc = sec.cols.filter(function (c) { return c.t === 'n' || c.t === 'm'; }); if (nc.length) { tot = { _total: 1 }; nc.forEach(function (c) { tot[c.k] = Math.round(rows.reduce(function (a, x) { return a + Number(x[c.k] || 0); }, 0) * 100) / 100; }); tot[sec.cols[0].k] = 'Matching total'; } else tot = null; }
+    else if (term) tot = null;
+    return { sec: sec, i: i, rows: rows, tot: tot };
+  });
+  var shown = term ? view.filter(function (v) { return v.rows.length; }) : view, count = view.reduce(function (a, v) { return a + (term ? v.rows.length : 0); }, 0);
+  out.innerHTML = '<h3 style="margin:0 0 8px">' + esc(r.title) + ' <span class="hint">' + esc(r.period) + '</span></h3>' +
+    (term ? '<div class="card"><b>Search "' + esc(term) + '":</b> ' + count + ' matching row(s) in ' + shown.length + ' table(s) of this report.' + (shown.length ? '' : ' Nothing matches.') + '</div>' : '<div class="grid">' + r.kpis.map(function (k) { return kpi(k.l, k.t === 'm' ? money(k.v) : k.t === 'p' ? num(k.v, 1) + ' %' : num(k.v, 1)); }).join('') + '</div>') +
+    shown.map(function (v) {
+      var sec = v.sec, rows = v.rows.concat(v.tot ? [v.tot] : []);
+      return '<div class="card"><h3>' + esc(sec.title) + ' <span class="hint">(' + (term ? v.rows.length + ' of ' + sec.rows.length : sec.rows.length) + ')</span><button class="btn small" data-csv="' + v.i + '" style="float:right">CSV</button></h3>' + (!v.rows.length ? '<p class="hint">Nothing in this period.</p>' :
         '<table><tr>' + sec.cols.map(function (c) { return '<th class="' + (c.t ? 'n' : '') + '">' + esc(c.h) + '</th>'; }).join('') + '</tr>' +
         rows.map(function (row) { return '<tr' + (row._total ? ' style="font-weight:700;background:var(--bg)"' : '') + '>' + sec.cols.map(function (c) { return '<td class="' + (c.t ? 'n' : '') + '"' + (c.t ? '' : ' style="white-space:normal"') + '>' + cell(c, row) + '</td>'; }).join('') + '</tr>'; }).join('') + '</table>') + '</div>';
     }).join('');
-  out.querySelectorAll('[data-csv]').forEach(function (b) { b.onclick = function () { var sec = r.sections[+b.dataset.csv]; csv(f.rep + '_' + sec.title.replace(/\W+/g, '_') + '_' + f.from + '_' + f.to, sec.cols.map(function (c) { return { h: c.h, k: c.k }; }), sec.rows); }; });
+  out.querySelectorAll('[data-csv]').forEach(function (b) { b.onclick = function () { var v = view[+b.dataset.csv], sec = v.sec; csv(f.rep + '_' + sec.title.replace(/\W+/g, '_') + '_' + f.from + '_' + f.to, sec.cols.map(function (c) { return { h: c.h, k: c.k }; }), v.rows); }; });
 }
 
 // ====================================================================
@@ -1783,8 +1796,8 @@ async function adminSettings(el, body) {
   body.innerHTML = '<div class="card"><h3>' + (IS_SHOP() ? 'Shop' : 'Hotel') + '</h3><div class="f" style="max-width:480px"><label>' + (IS_SHOP() ? 'Business name' : 'Hotel name') + '</label><input id="hn" value="' + esc(SET.hotel_name) + '"><label>Currency</label><input id="cu" value="' + esc(SET.currency) + '"></div><p><button class="btn primary" id="sv">Save</button></p></div><div class="card"><h3>Download a backup file</h3><p class="hint">Saves all hotel data (guests, bookings, bills, staff, settings...) as one file on this device. Keep it somewhere safe, for example once a week. Guest document photos and chat attachments are not inside this file.</p><button class="btn primary" id="dl">Download backup</button></div>';
   if (IS_SHOP()) {
     var shs = await call('shopSettings');
-    body.insertAdjacentHTML('afterbegin', '<div class="card"><h3>Selling</h3><label><input type="checkbox" id="neg"' + (shs.allow_negative ? ' checked' : '') + '> Allow selling a product even when the system shows none in stock</label><p class="hint">Leave this off to stop sales of items that are not in stock. Turn it on only if you do not keep your stock up to date.</p><p><button class="btn primary" id="svn">Save</button></p></div>');
-    $('#svn', body).onclick = function () { act(call('shopSaveSettings', { allow_negative: $('#neg', body).checked }).then(function () { toast('Saved.'); })); };
+    body.insertAdjacentHTML('afterbegin', '<div class="card"><h3>Selling</h3><label><input type="checkbox" id="neg"' + (shs.allow_negative ? ' checked' : '') + '> Allow selling a product even when the system shows none in stock</label><div class="f" style="max-width:480px"><label>Usual markup % over cost</label><input id="dmk" type="number" min="0" value="' + (shs.default_markup || '') + '"></div><p class="hint">The usual markup is suggested when you add products or record purchases, to work out selling prices. Leave the box above off to stop sales of items that are not in stock. Turn it on only if you do not keep your stock up to date.</p><p><button class="btn primary" id="svn">Save</button></p></div>');
+    $('#svn', body).onclick = function () { act(call('shopSaveSettings', { allow_negative: $('#neg', body).checked, default_markup: $('#dmk', body).value }).then(function () { toast('Saved.'); })); };
   }
   $('#sv', body).onclick = function () { act(call('saveSettings', { hotel_name: $('#hn', body).value, currency: $('#cu', body).value }).then(async function () { SET = await call('settings'); toast('Saved.'); draw(); })); };
   $('#dl', body).onclick = function () { act(call('backupData').then(function (d) { var blob = new Blob([JSON.stringify(d)], { type: 'application/json' }), a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'hotel-backup-' + TODAY + '.json'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(a.href); }, 5000); toast('Backup file downloaded.'); })); };
@@ -1946,9 +1959,9 @@ function shopReturnDialog(v, again) {
 
 // ---------- products ----------
 PAGES.products = async function (el) {
-  var costs = has('SHOP_COSTS'), all = await call('shopProducts', { active: 'ALL' }), f = SUB.pf = SUB.pf || { q: '', cat: '' }, cats = Object.keys(all.reduce(function (m, p) { if (p.category) m[p.category] = 1; return m; }, {})).sort();
+  var costs = has('SHOP_COSTS'), defMk = (await call('shopSettings')).default_markup || 0, all = await call('shopProducts', { active: 'ALL' }), f = SUB.pf = SUB.pf || { q: '', cat: '' }, cats = Object.keys(all.reduce(function (m, p) { if (p.category) m[p.category] = 1; return m; }, {})).sort();
   el.innerHTML = '<h2>Products</h2><div class="bar"><input id="q" placeholder="Search" value="' + esc(f.q) + '"><select id="cat"><option value="">All categories</option>' + cats.map(function (c) { return '<option' + (c === f.cat ? ' selected' : '') + '>' + esc(c) + '</option>'; }).join('') + '</select><button class="btn primary" id="np">Add product</button><button class="btn" id="csv">CSV</button></div><div id="pl" class="card"></div>';
-  var shown = [], cols = [{ h: 'Product', f: function (p) { return esc(shopName(p)) + (p.active ? '' : ' <span class="pill CANCELLED">off</span>'); } }, { h: 'Code', f: function (p) { return esc(p.sku || p.barcode || ''); } }, { h: 'Category', k: 'category' }, { h: 'Price', n: 1, f: function (p) { return num(p.sell_price); } }].concat(costs ? [{ h: 'Cost', n: 1, f: function (p) { return num(p.cost_price); } }] : []).concat([{ h: 'In stock', n: 1, f: function (p) { return shopQ(p.qty) + (p.low ? ' <span class="pill LOW">low</span>' : ''); } }, { h: '', f: function (p) { return '<button class="btn small" data-e="' + p.id + '">Edit</button> <button class="btn small" data-o="' + p.id + '">' + (p.active ? 'Switch off' : 'Switch on') + '</button>'; } }]);
+  var shown = [], cols = [{ h: 'Product', f: function (p) { return esc(shopName(p)) + (p.active ? '' : ' <span class="pill CANCELLED">off</span>'); } }, { h: 'Code', f: function (p) { return esc(p.sku || p.barcode || ''); } }, { h: 'Category', k: 'category' }, { h: 'Price', n: 1, f: function (p) { return num(p.sell_price); } }].concat(costs ? [{ h: 'Cost', n: 1, f: function (p) { return num(p.cost_price); } }, { h: 'Profit each', n: 1, f: function (p) { var g = p.sell_price - p.cost_price; return '<span class="' + (g < 0 ? 'err' : '') + '">' + num(g) + (p.sell_price ? ' (' + num(g / p.sell_price * 100, 1) + '%)' : '') + '</span>'; } }] : []).concat([{ h: 'In stock', n: 1, f: function (p) { return shopQ(p.qty) + (p.low ? ' <span class="pill LOW">low</span>' : ''); } }, { h: '', f: function (p) { return '<button class="btn small" data-e="' + p.id + '">Edit</button> <button class="btn small" data-o="' + p.id + '">' + (p.active ? 'Switch off' : 'Switch on') + '</button>'; } }]);
   var draw1 = function () {
     f.q = $('#q', el).value; f.cat = $('#cat', el).value; var q = f.q.toLowerCase();
     shown = all.filter(function (p) { return (!f.cat || p.category === f.cat) && (!q || (shopName(p) + ' ' + p.sku + ' ' + p.barcode + ' ' + p.brand).toLowerCase().indexOf(q) >= 0); });
@@ -1958,9 +1971,18 @@ PAGES.products = async function (el) {
   };
   var edit = function (p) {
     p = p || {}; var list = [['n', 'Name', 'text', p.name], ['v', 'Size / colour (variant)', 'text', p.variant], ['c', 'Category', 'text', p.category], ['b', 'Brand', 'text', p.brand], ['s', 'Product code (SKU)', 'text', p.sku], ['bc', 'Barcode', 'text', p.barcode], ['u', 'Unit', 'text', p.unit || 'pc'], ['sp', 'Selling price', 'number', p.sell_price]];
-    if (costs) list.push(['cp', 'Cost price (what you pay)', 'number', p.cost_price]); if (!p.id) list.push(['oq', 'Quantity you have now', 'number', '']);
+    if (costs) list.push(['cp', 'Cost price (what you pay)', 'number', p.cost_price], ['mk', 'Markup % over cost (fills the selling price)', 'number', p.cost_price > 0 && p.sell_price ? Math.round((p.sell_price / p.cost_price - 1) * 1000) / 10 : (p.id ? '' : (defMk || ''))]); if (!p.id) list.push(['oq', 'Quantity you have now', 'number', '']);
     list.push(['rl', 'Warn me when stock is at or below', 'number', p.reorder_level || ''], ['nt', 'Notes', 'text', p.notes]);
-    ask(p.id ? 'Edit product' : 'Add product', list, function (g) { return call('shopSaveProduct', { id: p.id, name: g('n'), variant: g('v'), category: g('c'), brand: g('b'), sku: g('s'), barcode: g('bc'), unit: g('u'), sell_price: g('sp'), cost_price: costs ? g('cp') : undefined, opening_qty: p.id ? undefined : g('oq'), reorder_level: g('rl'), notes: g('nt') }).then(function () { PAGES.products(el); }); });
+    var pm = ask(p.id ? 'Edit product' : 'Add product', list, function (g) { return call('shopSaveProduct', { id: p.id, name: g('n'), variant: g('v'), category: g('c'), brand: g('b'), sku: g('s'), barcode: g('bc'), unit: g('u'), sell_price: g('sp'), cost_price: costs ? g('cp') : undefined, opening_qty: p.id ? undefined : g('oq'), reorder_level: g('rl'), notes: g('nt') }).then(function () { PAGES.products(el); }); });
+
+    if (costs) {
+      var cpI = $('#f_cp', pm.el), spI = $('#f_sp', pm.el), mkI = $('#f_mk', pm.el), info = document.createElement('p'); info.className = 'hint'; pm.el.querySelector('.f').insertAdjacentElement('afterend', info);
+      var show = function () { var c = parseNum(cpI.value), v = parseNum(spI.value); info.textContent = c > 0 && v > 0 ? 'Profit on each item: ' + num(v - c) + ' (' + num((v - c) / v * 100, 1) + '% of the price)' + (v < c ? ' - you would sell at a LOSS' : '') : 'Write the cost and a markup, or the selling price, to see the profit.'; info.style.color = c > 0 && v < c ? '#b91c1c' : ''; };
+      var fromMk = function () { var c = parseNum(cpI.value); if (c > 0 && mkI.value !== '') spI.value = String(Math.round(c * (1 + parseNum(mkI.value) / 100))); show(); };
+      var fromSp = function () { var c = parseNum(cpI.value); if (c > 0 && spI.value !== '') mkI.value = String(Math.round((parseNum(spI.value) / c - 1) * 1000) / 10); show(); };
+      mkI.oninput = fromMk; spI.oninput = fromSp; cpI.oninput = function () { if (mkI.value !== '' && (!spI.value || !p.id)) fromMk(); else fromSp(); };
+      show();
+    }
   };
   $('#np', el).onclick = function () { edit(); }; $('#q', el).oninput = draw1; $('#cat', el).onchange = draw1; $('#csv', el).onclick = function () { csv('products_' + TODAY, cols.filter(function (c) { return c.h && c.k; }).concat([{ h: 'Name', k: 'name' }, { h: 'SKU', k: 'sku' }, { h: 'Price', k: 'sell_price' }, { h: 'In stock', k: 'qty' }]), shown); };
   draw1();
@@ -1977,7 +1999,7 @@ PAGES.stock = async function (el) {
     body.innerHTML = '<div class="bar"><input id="q" placeholder="Search" value="' + esc(f.q) + '"><label><input type="checkbox" id="lw"' + (f.low ? ' checked' : '') + '> Only low stock</label></div><div class="card" id="sl"></div>';
     var d1 = function () {
       f.q = $('#q', body).value; f.low = $('#lw', body).checked; var q = f.q.toLowerCase(), rows = prods.filter(function (p) { return (!f.low || p.low) && (!q || (shopName(p) + ' ' + p.sku + ' ' + p.category).toLowerCase().indexOf(q) >= 0); });
-      $('#sl', body).innerHTML = table([{ h: 'Product', f: function (p) { return esc(shopName(p)); } }, { h: 'Category', k: 'category' }, { h: 'In stock', n: 1, f: function (p) { return '<b' + (p.qty < 0 ? ' class="err"' : '') + '>' + shopQ(p.qty) + '</b> ' + esc(p.unit) + (p.low ? ' <span class="pill LOW">low</span>' : ''); } }, { h: '', f: function (p) { return '<button class="btn small" data-a="' + p.id + '">Add</button> <button class="btn small" data-r="' + p.id + '">Remove</button>'; } }], rows, { empty: 'Nothing here.' });
+      $('#sl', body).innerHTML = table([{ h: 'Product', f: function (p) { return esc(shopName(p)); } }, { h: 'Category', k: 'category' }, { h: 'In stock', n: 1, f: function (p) { return '<b' + (p.qty < 0 ? ' class="err"' : '') + '>' + shopQ(p.qty) + '</b> ' + esc(p.unit) + (p.low ? ' <span class="pill LOW">low</span>' : ''); } }].concat(has('SHOP_COSTS') ? [{ h: 'Cost', n: 1, f: function (p) { return num(p.cost_price); } }, { h: 'Selling price', n: 1, f: function (p) { return num(p.sell_price); } }, { h: 'Stock cost', n: 1, f: function (p) { return num(Math.max(0, p.qty) * p.cost_price); } }, { h: 'Profit if all sold', n: 1, f: function (p) { var g = Math.max(0, p.qty) * (p.sell_price - p.cost_price); return '<span class="' + (g < 0 ? 'err' : '') + '">' + num(g) + '</span>'; } }] : []).concat([{ h: '', f: function (p) { return '<button class="btn small" data-a="' + p.id + '">Add</button> <button class="btn small" data-r="' + p.id + '">Remove</button>'; } }]), rows, { empty: 'Nothing here.' });
       $$('[data-a]', body).forEach(function (b) { b.onclick = function () { adjust(+b.dataset.a, 'ADD'); }; }); $$('[data-r]', body).forEach(function (b) { b.onclick = function () { adjust(+b.dataset.r, 'REMOVE'); }; });
     };
     var adjust = function (id, mode) {
@@ -2029,12 +2051,12 @@ PAGES.buying = async function (el) {
 };
 async function shopPurchaseForm(sups, done) {
   if (!sups.length) return toast('Add a supplier first (Suppliers tab).', true);
-  var prods = (await call('shopProducts')).filter(function (p) { return p.active; }), costs = has('SHOP_COSTS'); if (!prods.length) return toast('Add products first.', true);
+  var prods = (await call('shopProducts')).filter(function (p) { return p.active; }), costs = has('SHOP_COSTS'), defMk = has('SHOP_PRODUCTS') ? (await call('shopSettings')).default_markup || 0 : 0; if (!prods.length) return toast('Add products first.', true);
   var opts = prods.map(function (p) { return '<option value="' + p.id + '">' + esc(shopName(p)) + '</option>'; }).join('');
   var row = function () { return '<tr class="pr"><td><select>' + opts + '</select></td><td><input type="number" step="any" min="0" class="q" style="width:80px"></td><td><input type="number" min="0" class="c" style="width:100px"></td><td><button class="btn small x">&times;</button></td></tr>'; };
-  var m = modal('New purchase', '<div class="f"><label>Supplier</label><select id="su">' + sups.map(function (s) { return '<option value="' + s.id + '">' + esc(s.name) + '</option>'; }).join('') + '</select><label>Invoice number</label><input id="iv"><label>Date</label><input id="bd" type="date" value="' + TODAY + '"></div><table id="pt"><tr><th>Product</th><th>Quantity</th><th>Unit cost</th><th></th></tr>' + row() + '</table><p><button class="btn small" id="ar">+ Add line</button></p><div class="f"><label>Paid now</label><input id="pa" type="number" min="0" placeholder="0 = pay later"><label>Paid by</label><select id="pm">' + SHOP_METHODS_UI.map(function (x) { return '<option value="' + x[0] + '">' + x[1] + '</option>'; }).join('') + '</select></div>' + (costs ? '' : '<p class="hint">The newest unit cost becomes the product cost.</p>'), [['Cancel'], ['Save purchase', function (mm) {
+  var m = modal('New purchase', '<div class="f"><label>Supplier</label><select id="su">' + sups.map(function (s) { return '<option value="' + s.id + '">' + esc(s.name) + '</option>'; }).join('') + '</select><label>Invoice number</label><input id="iv"><label>Date</label><input id="bd" type="date" value="' + TODAY + '"></div><table id="pt"><tr><th>Product</th><th>Quantity</th><th>Unit cost</th><th></th></tr>' + row() + '</table><p><button class="btn small" id="ar">+ Add line</button></p><div class="f">' + (has('SHOP_PRODUCTS') ? '<label>Set selling prices to cost + %</label><input id="mk" type="number" min="0" placeholder="leave empty to keep current prices" value="' + (defMk || '') + '">' : '') + '<label>Paid now</label><input id="pa" type="number" min="0" placeholder="0 = pay later"><label>Paid by</label><select id="pm">' + SHOP_METHODS_UI.map(function (x) { return '<option value="' + x[0] + '">' + x[1] + '</option>'; }).join('') + '</select></div>' + (costs ? '' : '<p class="hint">The newest unit cost becomes the product cost.</p>'), [['Cancel'], ['Save purchase', function (mm) {
     var lines = $$('.pr', mm).map(function (r) { return { product_id: +$('select', r).value, qty: $('.q', r).value, unit_cost: $('.c', r).value }; });
-    return call('shopPurchaseCreate', { supplier_id: +$('#su', mm).value, invoice_no: $('#iv', mm).value, bought_on: $('#bd', mm).value, lines: lines, paid_amount: $('#pa', mm).value, method: $('#pm', mm).value }).then(function (r) { toast('Purchase saved (' + num(r.total) + '). Stock updated.'); done(); });
+    return call('shopPurchaseCreate', { supplier_id: +$('#su', mm).value, invoice_no: $('#iv', mm).value, bought_on: $('#bd', mm).value, lines: lines, paid_amount: $('#pa', mm).value, method: $('#pm', mm).value, markup_pct: $('#mk', mm) ? $('#mk', mm).value : undefined }).then(function (r) { toast('Purchase saved (' + num(r.total) + '). Stock updated.'); if (r.below_cost && r.below_cost.length) setTimeout(function () { toast('Selling price is now below cost: ' + r.below_cost.join(', '), true); }, 600); done(); });
   }, 'primary']]);
   var wire = function () { $$('.x', m.el).forEach(function (b) { b.onclick = function () { if ($$('.pr', m.el).length > 1) b.closest('tr').remove(); }; }); };
   $('#ar', m.el).onclick = function () { $('#pt', m.el).insertAdjacentHTML('beforeend', row()); wire(); }; wire();
