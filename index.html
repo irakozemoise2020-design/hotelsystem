@@ -1342,7 +1342,7 @@ async function plansTab(el, body) {
 }
 
 PAGES.food = async function (el) {
-  var store = has('FOOD_STORE'), tabs = (store ? [['stock', 'Stock']].concat(has('FOOD_RECEIVE') ? [['receive', 'Receive']] : []).concat([['requests', 'Requests'], ['kitchen', 'Kitchen'], ['made', 'Kitchen log'], ['sold', 'Kitchen sales'], ['moves', 'Movements']]) : [['kitchen', 'Kitchen'], ['made', 'What I made'], ['sold', 'What I sold'], ['requests', 'My requests']]);
+  var store = has('FOOD_STORE'), tabs = (store ? [['stock', 'Stock']].concat(has('FOOD_RECEIVE') ? [['receive', 'Receive']] : []).concat([['requests', 'Requests'], ['kitchen', 'Kitchen'], ['made', 'Kitchen log'], ['sold', 'Kitchen sales'], ['moves', 'Movements'], ['report', 'Report']]) : [['kitchen', 'Kitchen'], ['made', 'What I made'], ['sold', 'What I sold'], ['requests', 'My requests']]);
   var tab = SUB.fd = tabs.some(function (t) { return t[0] === SUB.fd; }) ? SUB.fd : tabs[0][0];
   el.innerHTML = '<h2>Food store</h2><div class="tabs">' + tabs.map(function (t) { return '<button data-t="' + t[0] + '" class="' + (tab === t[0] ? 'on' : '') + '">' + t[1] + '</button>'; }).join('') + '</div><div id="fb"></div>';
   el.querySelector('.tabs').onclick = function (e) { var b = e.target.closest('button'); if (b) { SUB.fd = b.dataset.t; PAGES.food(el); } };
@@ -1382,6 +1382,11 @@ PAGES.food = async function (el) {
       rawCall('foodRecipes', []).then(function (rr) { var rc = rr && rr.ok ? rr.data : []; if (!rc.length || !$('#rcl', body)) return; $('#rcl', body).innerHTML = '<div class="card"><h3>Made before - tap to make it again</h3>' + rc.map(function (r) { return '<span style="display:inline-block;margin:0 8px 8px 0"><button class="btn" data-rc="' + r.id + '">' + esc(r.name) + '</button><button class="btn small" data-rd="' + r.id + '" title="Delete this recipe">&times;</button></span>'; }).join('') + '</div>'; $$('[data-rc]', body).forEach(function (b) { b.onclick = function () { foodProduceDialog(back, { recipe_id: +b.dataset.rc }); }; }); $$('[data-rd]', body).forEach(function (b) { b.onclick = function () { sure('Delete this recipe? Past records stay.', function () { return call('foodDeleteRecipe', +b.dataset.rd).then(back); }, 'Delete'); }; }); });
     }
     body.querySelectorAll('[data-k]').forEach(function (b) { b.onclick = function () { var p = b.dataset.k.split(':'), it = kl.filter(function (i) { return i.id === +p[1]; })[0], lab = { USED: 'Used', WASTE: 'Wasted', RETURN: 'Return to store' }[p[0]]; ask(lab + ': ' + it.name, [['q', 'Quantity (max ' + it.kitchen + ' ' + it.unit + ')', 'number']].concat(p[0] === 'WASTE' ? [['n', 'Why', 'text']] : []), function (g) { return call('foodKitchenUse', it.id, g('q'), p[0], p[0] === 'WASTE' ? g('n') : '').then(back); }); }; });
+  } else if (tab === 'report') {
+    var rf = SUB.fr = SUB.fr || { rep: 'foodtrade', from: TODAY.slice(0, 8) + '01', to: TODAY };
+    body.innerHTML = '<div class="bar"><label>From <input type="date" id="rf1" value="' + rf.from + '"></label><label>To <input type="date" id="rf2" value="' + rf.to + '"></label><button class="btn primary" id="rg">Show</button></div><div id="out"></div>';
+    var lr = async function () { rf.from = $('#rf1', body).value; rf.to = $('#rf2', body).value; GR = await call('reportRun', 'foodtrade', rf.from, rf.to); renderGeneric(body, rf); };
+    $('#rg', body).onclick = lr; await lr();
   } else if (tab === 'sold') {
     var sf = SUB.fs = SUB.fs || { from: TODAY.slice(0, 8) + '01', to: TODAY };
     body.innerHTML = '<div class="bar"><label>From <input type="date" id="sf1" value="' + sf.from + '"></label><label>To <input type="date" id="sf2" value="' + sf.to + '"></label><button class="btn primary" id="sg">Show</button></div><div id="sl2"></div>';
