@@ -259,6 +259,14 @@ var BADGE_TIMER = null;
 function quiet(fn) {
   return server('api', [TOKEN, fn, []]).then(function (r) { if (!r.ok || (r.data && r.data.expired)) throw new Error('x'); return r.data; });
 }
+/** Red count on the Requests tab itself (Food store page). */
+function foodTabDot(r) {
+  var b = $('.tabs button[data-t="requests"]'); if (!b || !r) return;
+  var seen = ''; try { seen = localStorage.getItem('foodSeen_' + ME.name) || ''; } catch (e) {}
+  var n = r.food_open ? String(r.food_open) : (r.food_answered && r.food_answered > seen && !has('FOOD_STORE') ? 'new' : '');
+  var old = b.querySelector('.rdot'); if (old) old.remove();
+  if (n && !b.classList.contains('on')) b.insertAdjacentHTML('beforeend', ' <span class="rdot" style="background:#dc2626;color:#fff;border-radius:99px;padding:0 7px;font-size:11px;font-weight:700">' + n + '</span>');
+}
 function refreshChatBadge(soon) {
   clearTimeout(BADGE_TIMER);                       // one poll loop only, however often the page is redrawn
   if (!TOKEN) return;
@@ -268,6 +276,7 @@ function refreshChatBadge(soon) {
   quiet('badges').then(function (r) {
     var el = $('#chatDot');
     if (el) { if (r.unread) { el.textContent = r.unread > 99 ? '99+' : String(r.unread); el.style.display = 'inline-block'; } else { el.textContent = ''; el.style.display = 'none'; } }
+    foodTabDot(r);
     var fb = $('#nav button[data-p="food"]');
     if (fb) {
       var mark = '', ans = '', seen = '';
@@ -1356,6 +1365,7 @@ PAGES.food = async function (el) {
   var tab = SUB.fd = tabs.some(function (t) { return t[0] === SUB.fd; }) ? SUB.fd : tabs[0][0];
   el.innerHTML = '<h2>Food store</h2><div class="tabs">' + tabs.map(function (t) { return '<button data-t="' + t[0] + '" class="' + (tab === t[0] ? 'on' : '') + '">' + t[1] + '</button>'; }).join('') + '</div><div id="fb"></div>';
   el.querySelector('.tabs').onclick = function (e) { var b = e.target.closest('button'); if (b) { SUB.fd = b.dataset.t; PAGES.food(el); } };
+  if (has('FOOD_STORE') || has('FOOD_KITCHEN')) quiet('badges').then(foodTabDot).catch(function () {});
   var body = $('#fb', el), back = function () { PAGES.food(el); }, units = ['kg', 'g', 'litre', 'ml', 'piece', 'pack', 'crate', 'sack', 'bottle', 'tin'];
   var flag = function (i) { return (i.expired ? pillL('CANCELLED', 'Expired') + ' ' : '') + (i.expiring ? pillL('PENDING', 'Expiring') + ' ' : '') + (i.low ? pillL('URGENT', 'Low') : ''); };
   if (tab === 'stock') {
