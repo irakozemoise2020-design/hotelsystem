@@ -264,10 +264,20 @@ function refreshChatBadge(soon) {
   if (!TOKEN) return;
   var again = function () { BADGE_TIMER = setTimeout(refreshChatBadge, 60000); };
   if (soon === 'wait') { BADGE_TIMER = setTimeout(refreshChatBadge, 4000); return; }   // let the page itself load first
-  if (document.hidden || !(has('MESSAGES') || has('HANDOVER'))) return again();
+  if (document.hidden || !(has('MESSAGES') || has('HANDOVER') || has('FOOD_STORE') || has('FOOD_KITCHEN'))) return again();
   quiet('badges').then(function (r) {
     var el = $('#chatDot');
     if (el) { if (r.unread) { el.textContent = r.unread > 99 ? '99+' : String(r.unread); el.style.display = 'inline-block'; } else { el.textContent = ''; el.style.display = 'none'; } }
+    var fb = $('#nav button[data-p="food"]');
+    if (fb) {
+      var mark = '', ans = '', seen = '';
+      try { seen = localStorage.getItem('foodSeen_' + ME.name) || ''; } catch (e) {}
+      if (r.food_open) mark = ' (' + r.food_open + ')'; else if (r.food_answered && r.food_answered > seen) mark = ' (new)';
+      fb.textContent = 'Food store' + mark; fb.style.fontWeight = mark ? '700' : '';
+      if (r.food_open > (window.FOOD_OPEN_SEEN || 0) && window.FOOD_OPEN_SEEN !== undefined) toast('New request from the kitchen - open Food store > Requests.');
+      if (r.food_answered && r.food_answered > seen && window.FOOD_ANS_SEEN !== undefined && r.food_answered > window.FOOD_ANS_SEEN) toast('The store answered your request - open Food store > Requests.');
+      window.FOOD_OPEN_SEEN = r.food_open || 0; window.FOOD_ANS_SEEN = r.food_answered || '';
+    }
     var b = $('#nav button[data-p="handover"]'); if (b) { b.textContent = 'Handover' + (r.open ? ' (' + r.open + ')' : ''); b.style.fontWeight = r.important ? '700' : ''; }
   }).catch(function () {});
   again();
@@ -1367,10 +1377,16 @@ PAGES.food = async function (el) {
     $('#rc', el).onclick = function () { var g = function (k) { return val($('#rf', el), k); }; act(call('foodReceive', { item_id: +g('i'), qty: g('q'), unit_cost: g('c'), expiry: g('x'), supplier: g('s'), invoice: g('v'), note: g('n') }).then(function () { toast('Received.'); back(); })); };
   } else if (tab === 'requests') {
     var st = SUB.fr = SUB.fr || 'OPEN', rq = await call('foodRequests', st), kit = has('FOOD_KITCHEN');
-    body.innerHTML = '<div class="bar"><select id="rs"><option value="OPEN">Waiting</option><option value="DONE">Done</option><option value="REJECTED">Refused</option><option value="ALL">All</option></select><span style="flex:1"></span>' + (kit ? '<button class="btn primary" id="nr">New request</button>' : '') + '</div><div class="card">' + table([{ h: 'When', k: 'at' }, { h: 'Item', k: 'item' }, { h: 'Asked', n: 1, f: function (r) { return num(r.qty, 2) + ' ' + esc(r.unit); } }, { h: 'Issued', n: 1, k: 'issued_qty' }, { h: 'In store', n: 1, k: 'store' }, { h: 'By', k: 'by' }, { h: 'Note', f: function (r) { return esc(r.note || r.reply); } }, { h: 'Status', f: function (r) { return pill(r.status); } }, { h: '', f: function (r) { return store && r.status === 'OPEN' ? '<button class="btn small primary" data-i="' + r.id + '"' + nope('FOOD_ISSUE') + '>Issue</button> <button class="btn small danger" data-j="' + r.id + '"' + nope('FOOD_ISSUE') + '>Refuse</button>' : ''; } }], rq, { empty: 'No requests.' }) + '</div>';
+    body.innerHTML = '<div class="bar"><select id="rs"><option value="OPEN">Waiting</option><option value="DONE">Done</option><option value="REJECTED">Refused</option><option value="ALL">All</option></select><span style="flex:1"></span>' + (kit ? '<button class="btn primary" id="nr">New request</button>' : '') + '</div><div class="card">' + table([{ h: 'When', k: 'at' }, { h: 'Item', k: 'item' }, { h: 'Asked', n: 1, f: function (r) { return r.qty > 0 ? num(r.qty, 2) + ' ' + esc(r.unit) : '<span class="hint">store decides</span>'; } }, { h: 'Issued', n: 1, k: 'issued_qty' }, { h: 'In store', n: 1, k: 'store' }, { h: 'By', k: 'by' }, { h: 'Note', f: function (r) { return esc(r.note || r.reply); } }, { h: 'Status', f: function (r) { return pill(r.status); } }, { h: '', f: function (r) { return store && r.status === 'OPEN' ? '<button class="btn small primary" data-i="' + r.id + '"' + nope('FOOD_ISSUE') + '>Approve</button> <button class="btn small danger" data-j="' + r.id + '"' + nope('FOOD_ISSUE') + '>Refuse</button>' : ''; } }], rq, { empty: 'No requests.' }) + '</div>';
+    if (kit && !store) quiet('badges').then(function (b) { try { localStorage.setItem('foodSeen_' + ME.name, b.food_answered || ''); } catch (e) {} var fb = $('#nav button[data-p="food"]'); if (fb) { fb.textContent = 'Food store'; fb.style.fontWeight = ''; } }).catch(function () {});
     $('#rs', el).value = st; $('#rs', el).onchange = function () { SUB.fr = $('#rs', el).value; back(); };
-    if (kit) $('#nr', el).onclick = async function () { var its2 = (await call('foodItems')).filter(function (i) { return i.active; }); ask('Ask the store for food', [['i', 'Item', 'select', '', its2.map(function (i) { return [i.id, i.name + ' (' + i.unit + ')']; })], ['q', 'Quantity', 'number'], ['n', 'Note', 'text']], function (g) { return call('foodRequest', +g('i'), g('q'), g('n')).then(function () { toast('Request sent to the store.'); back(); }); }, 'Send'); };
-    body.querySelectorAll('[data-i]').forEach(function (b) { b.onclick = function () { var r = rq.filter(function (x) { return x.id === +b.dataset.i; })[0]; ask('Issue ' + r.item, [['q', 'Quantity (leave empty for all that was asked: ' + num(r.qty - r.issued_qty, 2) + ')', 'number']], function (g) { return call('foodRequestIssue', r.id, g('q')).then(function () { toast('Issued.'); back(); }); }, 'Issue'); }; });
+    if (kit) $('#nr', el).onclick = async function () {
+      var its2 = (await call('foodItems')).filter(function (i) { return i.active; });
+      var m = modal('Ask the store for food', '<p class="hint">Tick what you need. The store will see it straight away and decide how much to give you.</p><input id="rqs" placeholder="Search..." style="width:100%;margin-bottom:8px"><div id="rql" style="max-height:300px;overflow:auto">' + its2.map(function (i) { return '<label class="rqi" style="display:block;padding:6px 0"><input type="checkbox" value="' + i.id + '"> ' + esc(i.name) + ' <span class="hint">(' + esc(i.unit) + ', store has ' + num(i.store, 2) + ')</span></label>'; }).join('') + '</div><label style="display:block;margin-top:8px">Note (optional) <input id="rqn" style="width:100%" placeholder="e.g. for tonight\'s dinner"></label>',
+        [['Cancel', function (mm, close) { close(); }], ['Send request', function (mm, close) { var ids = $$('#rql input:checked', mm.el).map(function (c) { return +c.value; }); if (!ids.length) { toast('Tick at least one item.', true); return false; } return (async function () { for (var k = 0; k < ids.length; k++) await call('foodRequest', ids[k], '', $('#rqn', mm.el).value); toast('Request sent to the store.'); close(); back(); })(); }, 'primary']]);
+      $('#rqs', m.el).oninput = function () { var t = this.value.toLowerCase(); $$('.rqi', m.el).forEach(function (l) { l.style.display = l.textContent.toLowerCase().indexOf(t) >= 0 ? '' : 'none'; }); };
+    };
+    body.querySelectorAll('[data-i]').forEach(function (b) { b.onclick = function () { var r = rq.filter(function (x) { return x.id === +b.dataset.i; })[0]; ask('Approve: ' + r.item + ' for ' + (r.by || 'the kitchen'), [['q', r.qty > 0 ? 'How much do you give? (they asked ' + num(r.qty - r.issued_qty, 2) + ' ' + r.unit + '; empty = all of it)' : 'How much do you give? (' + r.unit + ' - the store has ' + num(r.store, 2) + ')', 'number', r.qty > 0 ? '' : '']], function (g) { return call('foodRequestIssue', r.id, g('q')).then(function () { toast('Approved. It is now in the kitchen.'); back(); }); }, 'Approve'); }; });
     body.querySelectorAll('[data-j]').forEach(function (b) { b.onclick = function () { ask('Refuse request', [['n', 'Reason', 'text']], function (g) { return call('foodRequestReject', +b.dataset.j, g('n')).then(back); }, 'Refuse'); }; });
   } else if (tab === 'kitchen') {
     var kl = (await call('foodKitchenList')).filter(function (i) { return i.kitchen > 0; });
@@ -1383,7 +1399,7 @@ PAGES.food = async function (el) {
     }
     body.querySelectorAll('[data-k]').forEach(function (b) { b.onclick = function () { var p = b.dataset.k.split(':'), it = kl.filter(function (i) { return i.id === +p[1]; })[0], lab = { USED: 'Used', WASTE: 'Wasted', RETURN: 'Return to store' }[p[0]]; ask(lab + ': ' + it.name, [['q', 'Quantity (max ' + it.kitchen + ' ' + it.unit + ')', 'number']].concat(p[0] === 'WASTE' ? [['n', 'Why', 'text']] : []), function (g) { return call('foodKitchenUse', it.id, g('q'), p[0], p[0] === 'WASTE' ? g('n') : '').then(back); }); }; });
   } else if (tab === 'report') {
-    var rf = SUB.fr = SUB.fr || { rep: 'foodtrade', from: TODAY.slice(0, 8) + '01', to: TODAY };
+    var rf = SUB.frp = SUB.frp || { rep: 'foodtrade', from: TODAY.slice(0, 8) + '01', to: TODAY };
     body.innerHTML = '<div class="bar"><label>From <input type="date" id="rf1" value="' + rf.from + '"></label><label>To <input type="date" id="rf2" value="' + rf.to + '"></label><button class="btn primary" id="rg">Show</button></div><div id="out"></div>';
     var lr = async function () { rf.from = $('#rf1', body).value; rf.to = $('#rf2', body).value; GR = await call('reportRun', 'foodtrade', rf.from, rf.to); renderGeneric(body, rf); };
     $('#rg', body).onclick = lr; await lr();
