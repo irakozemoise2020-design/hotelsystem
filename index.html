@@ -423,10 +423,12 @@ async function openFolio(id) {
 }
 function refreshPage() { draw(); }
 function reopen(b) { return function () { openFolio(b.id); refreshPage(); }; }
-function checkOut(b) {
-  if (b.balance > 0 && !has('DISCOUNT')) { toast('The guest still owes ' + num(b.balance) + '. Take the payment first.', true); return openFolio(b.id); }
-  if (b.balance <= 0) return sure('Check out ' + b.guest_name + ' from room ' + b.room_number + '?', function () { return call('checkOut', b.id).then(function () { toast('Checked out. The room needs cleaning.'); refreshPage(); }); }, 'Check out');
-  ask('Check out with a balance', [['reason', 'Reason (balance ' + num(b.balance) + ' unpaid)', 'text']], function (g) { return call('checkOut', b.id, true, g('reason')).then(function () { toast('Checked out.'); refreshPage(); }); }, 'Check out');
+async function checkOut(b) {
+  var cb; try { cb = await call('closingBill', b.id); } catch (e) { return; }                // the real amount for today, not the folio's planned total
+  var owe = cb.balance, name = b.guest_name + ' from room ' + b.room_number;
+  if (owe > 0 && !has('DISCOUNT')) { toast('The guest still owes ' + num(owe) + ' (' + cb.nights + ' night(s) up to ' + cb.out + '). Take the payment first.', true); return openFolio(b.id); }
+  if (owe <= 0) return sure('Check out ' + name + '?' + (owe < 0 ? ' The guest has paid ' + num(-owe) + ' more than the bill - refund it if needed.' : ''), function () { return call('checkOut', b.id).then(function () { toast('Checked out. The room needs cleaning.'); refreshPage(); }); }, 'Check out');
+  ask('Check out with a balance', [['reason', 'Reason (balance ' + num(owe) + ' unpaid)', 'text']], function (g) { return call('checkOut', b.id, true, g('reason')).then(function () { toast('Checked out.'); refreshPage(); }); }, 'Check out');
 }
 function addPayment(b) { ask('Add payment', [['a', 'Amount', 'number', Math.max(0, b.balance) || ''], ['m', 'Paid by', 'select', 'Cash', ['Cash', 'Mobile money', 'Card', 'Bank transfer']], ['n', 'Note', 'text']], function (g) { return call('addPayment', b.id, g('a'), g('m'), g('n')).then(reopen(b)); }); }
 function refund(b) { ask('Refund', [['a', 'Amount', 'number'], ['m', 'Refunded by', 'select', 'Cash', ['Cash', 'Mobile money', 'Card', 'Bank transfer']], ['r', 'Reason', 'text']], function (g) { return call('refund', b.id, g('a'), g('m'), g('r')).then(reopen(b)); }); }
@@ -1340,7 +1342,7 @@ async function plansTab(el, body) {
 }
 
 PAGES.food = async function (el) {
-  var store = has('FOOD_STORE'), tabs = (store ? [['stock', 'Stock']].concat(has('FOOD_RECEIVE') ? [['receive', 'Receive']] : []).concat([['requests', 'Requests'], ['kitchen', 'Kitchen'], ['moves', 'Movements']]) : [['kitchen', 'Kitchen'], ['requests', 'My requests']]);
+  var store = has('FOOD_STORE'), tabs = (store ? [['stock', 'Stock']].concat(has('FOOD_RECEIVE') ? [['receive', 'Receive']] : []).concat([['requests', 'Requests'], ['kitchen', 'Kitchen'], ['made', 'Kitchen log'], ['moves', 'Movements']]) : [['kitchen', 'Kitchen'], ['made', 'What I made'], ['requests', 'My requests']]);
   var tab = SUB.fd = tabs.some(function (t) { return t[0] === SUB.fd; }) ? SUB.fd : tabs[0][0];
   el.innerHTML = '<h2>Food store</h2><div class="tabs">' + tabs.map(function (t) { return '<button data-t="' + t[0] + '" class="' + (tab === t[0] ? 'on' : '') + '">' + t[1] + '</button>'; }).join('') + '</div><div id="fb"></div>';
   el.querySelector('.tabs').onclick = function (e) { var b = e.target.closest('button'); if (b) { SUB.fd = b.dataset.t; PAGES.food(el); } };
@@ -1372,11 +1374,26 @@ PAGES.food = async function (el) {
     body.querySelectorAll('[data-j]').forEach(function (b) { b.onclick = function () { ask('Refuse request', [['n', 'Reason', 'text']], function (g) { return call('foodRequestReject', +b.dataset.j, g('n')).then(back); }, 'Refuse'); }; });
   } else if (tab === 'kitchen') {
     var kl = (await call('foodKitchenList')).filter(function (i) { return i.kitchen > 0; });
-    body.innerHTML = '<div class="card">' + table([{ h: 'Item', k: 'name' }, { h: 'In kitchen', n: 1, f: function (i) { return num(i.kitchen, 2) + ' ' + esc(i.unit); } }, { h: '', f: function (i) { return '<button class="btn small" data-k="USED:' + i.id + '">Used</button> <button class="btn small" data-k="WASTE:' + i.id + '">Waste</button> <button class="btn small" data-k="RETURN:' + i.id + '">Return</button>'; } }], kl, { empty: 'The kitchen has no stock from the store.' }) + '</div>';
+    body.innerHTML = ((has('FOOD_KITCHEN') || has('FOOD_STORE')) ? '<div class="bar"><button class="btn primary" id="mk2">Make something (cook / convert)</button><span class="hint">Turn any ingredient into something new (meat into brochette, flour into bread...) and put it in the store, or just write down what it was used for.</span></div><div id="rcl"></div>' : '') + '<div class="card">' + table([{ h: 'Item', k: 'name' }, { h: 'In kitchen', n: 1, f: function (i) { return num(i.kitchen, 2) + ' ' + esc(i.unit); } }, { h: '', f: function (i) { return ((has('FOOD_KITCHEN') || has('FOOD_STORE')) ? '<button class="btn small primary" data-mk="' + i.id + '">Make something from this</button> ' : '') + '<button class="btn small" data-k="USED:' + i.id + '">Used</button> <button class="btn small" data-k="WASTE:' + i.id + '">Waste</button> <button class="btn small" data-k="RETURN:' + i.id + '">Return</button>'; } }], kl, { empty: 'The kitchen has no stock from the store.' }) + '</div>';
+    $$('[data-mk]', body).forEach(function (b) { b.onclick = function () { foodProduceDialog(back, { inputs: [{ item_id: +b.dataset.mk, qty: '' }] }); }; });
+    if ($('#mk2', body)) {
+      $('#mk2', body).onclick = function () { foodProduceDialog(back); };
+      call('foodRecipes').then(function (rc) { if (!rc.length || !$('#rcl', body)) return; $('#rcl', body).innerHTML = '<div class="card"><h3>Saved recipes - pick one and say how many times</h3>' + rc.map(function (r) { return '<span style="display:inline-block;margin:0 8px 8px 0"><button class="btn" data-rc="' + r.id + '">' + esc(r.name) + '</button><button class="btn small" data-rd="' + r.id + '" title="Delete this recipe">&times;</button></span>'; }).join('') + '</div>'; $$('[data-rc]', body).forEach(function (b) { b.onclick = function () { foodProduceDialog(back, { recipe_id: +b.dataset.rc }); }; }); $$('[data-rd]', body).forEach(function (b) { b.onclick = function () { sure('Delete this recipe? Past records stay.', function () { return call('foodDeleteRecipe', +b.dataset.rd).then(back); }, 'Delete'); }; }); });
+    }
     body.querySelectorAll('[data-k]').forEach(function (b) { b.onclick = function () { var p = b.dataset.k.split(':'), it = kl.filter(function (i) { return i.id === +p[1]; })[0], lab = { USED: 'Used', WASTE: 'Wasted', RETURN: 'Return to store' }[p[0]]; ask(lab + ': ' + it.name, [['q', 'Quantity (max ' + it.kitchen + ' ' + it.unit + ')', 'number']].concat(p[0] === 'WASTE' ? [['n', 'Why', 'text']] : []), function (g) { return call('foodKitchenUse', it.id, g('q'), p[0], p[0] === 'WASTE' ? g('n') : '').then(back); }); }; });
+  } else if (tab === 'made') {
+    var pf = SUB.fp = SUB.fp || { from: TODAY.slice(0, 8) + '01', to: TODAY, q: '' };
+    body.innerHTML = '<div class="bar"><label>From <input type="date" id="pf1" value="' + pf.from + '"></label><label>To <input type="date" id="pf2" value="' + pf.to + '"></label><input id="pq" placeholder="Search (brochette, meat, chef)" value="' + esc(pf.q) + '"><button class="btn primary" id="pg">Show</button>' + ((has('FOOD_KITCHEN') || has('FOOD_STORE')) ? '<button class="btn primary" id="mk3">Make something</button>' : '') + '</div><div class="card" id="pl2"></div>';
+    var ld = async function () {
+      pf.from = $('#pf1', body).value; pf.to = $('#pf2', body).value; pf.q = $('#pq', body).value; var rows = await call('foodProductions', pf);
+      $('#pl2', body).innerHTML = table([{ h: 'When', k: 'at' }, { h: 'Chef', k: 'by' }, { h: 'Made', f: function (p) { return '<b>' + esc(p.title) + '</b>' + (p.status === 'VOID' ? ' ' + pillL('CANCELLED', 'Cancelled') : ''); } }, { h: 'Used', k: 'used' }, { h: 'Result', f: function (p) { return esc(p.made || '-') + (p.result === 'STORE' ? ' <span class="hint">(back in store)</span>' : ' <span class="hint">(record only)</span>'); } }, { h: 'Ingredient cost', n: 1, f: function (p) { return money(p.cost); } }, { h: '', f: function (p) { return (p.status === 'DONE' && has('FOOD_KITCHEN') ? '<button class="btn small" data-ag="' + p.id + '">Make again</button> ' : '') + (has('FOOD_STORE') && p.status === 'DONE' ? '<button class="btn small" data-u="' + p.id + '">Undo</button>' : ''); } }], rows, { empty: 'Nothing recorded in this period.' });
+      $$('[data-ag]', body).forEach(function (b) { b.onclick = function () { var p = rows.filter(function (x) { return x.id === +b.dataset.ag; })[0]; foodProduceDialog(ld, { title: p.title, inputs: p.inputs, outputs: p.outputs, made_qty: p.result === 'RECORD' ? parseNum(p.made) : 0, made_unit: p.result === 'RECORD' ? String(p.made).replace(/^[\d.]+\s*/, '') : '' }); }; });
+      $$('[data-u]', body).forEach(function (b) { b.onclick = function () { ask('Undo this record', [['r', 'Reason (required)', 'text']], function (g) { return call('foodProductionVoid', +b.dataset.u, g('r')).then(function () { toast('Undone: the ingredients are back in the kitchen and the made items are out of the store.'); ld(); }); }, 'Undo'); }; });
+    };
+    $('#pg', body).onclick = ld; if ($('#mk3', body)) $('#mk3', body).onclick = function () { foodProduceDialog(ld); }; await ld();
   } else {
     var mf = SUB.fm = SUB.fm || 'ALL', mv = await call('foodMoves', { kind: mf });
-    body.innerHTML = '<div class="bar"><select id="mk">' + ['ALL', 'RECEIVE', 'ISSUE', 'USED', 'WASTE', 'RETURN', 'SPOIL'].map(function (k) { return '<option value="' + k + '">' + (k === 'ALL' ? 'All movements' : k) + '</option>'; }).join('') + '</select></div><div class="card">' + table([{ h: 'When', k: 'at' }, { h: 'Item', k: 'item' }, { h: 'Kind', f: function (m) { return pill(m.kind); } }, { h: 'Qty', n: 1, f: function (m) { return num(m.qty, 2) + ' ' + esc(m.unit); } }, { h: 'Value', n: 1, f: function (m) { return money(m.value); } }, { h: 'Note', k: 'note' }, { h: 'By', k: 'by' }], mv, { empty: 'Nothing yet.' }) + '</div>';
+    body.innerHTML = '<div class="bar"><select id="mk">' + ['ALL', 'RECEIVE', 'ISSUE', 'USED', 'PRODUCED', 'WASTE', 'RETURN', 'SPOIL', 'UNDO'].map(function (k) { return '<option value="' + k + '">' + (k === 'ALL' ? 'All movements' : k) + '</option>'; }).join('') + '</select></div><div class="card">' + table([{ h: 'When', k: 'at' }, { h: 'Item', k: 'item' }, { h: 'Kind', f: function (m) { return pill(m.kind); } }, { h: 'Qty', n: 1, f: function (m) { return num(m.qty, 2) + ' ' + esc(m.unit); } }, { h: 'Value', n: 1, f: function (m) { return money(m.value); } }, { h: 'Note', k: 'note' }, { h: 'By', k: 'by' }], mv, { empty: 'Nothing yet.' }) + '</div>';
     $('#mk', el).value = mf; $('#mk', el).onchange = function () { SUB.fm = $('#mk', el).value; back(); };
   }
 };
@@ -2092,6 +2109,56 @@ PAGES.expenses = async function (el) {
   $('#na', el).onclick = function () { ask('Add expense', [['c', 'Category', 'select', 'Other', cats.length ? cats : ['Other']], ['a', 'Amount', 'number'], ['m', 'Paid by', 'select', 'CASH', SHOP_METHODS_UI], ['d', 'Date', 'date', TODAY], ['n', 'Note', 'text']], function (g) { return call('shopAddExpense', { category: g('c'), amount: g('a'), method: g('m'), spent_on: g('d'), note: g('n') }).then(load); }); };
   await load();
 };
+
+// ---------- kitchen: make something from ingredients (any item) ----------
+async function foodProduceDialog(done, pre) {
+  pre = pre || {}; var all = (await call('foodItems')).filter(function (i) { return i.active; }), recipes = await call('foodRecipes'), canIssue = has('FOOD_ISSUE');
+  var src = all.filter(function (i) { return i.kitchen > 0 || (canIssue && i.store > 0); });
+  if (!src.length) return toast(canIssue ? 'There is nothing in the store or the kitchen to use.' : 'The kitchen has no stock yet. Ask the store for it first (Requests tab).', true);
+  var byId = {}; all.forEach(function (i) { byId[i.id] = i; });
+  var lab = function (i) { return esc(i.name) + ' - kitchen ' + num(i.kitchen, 2) + (canIssue ? ', store ' + num(i.store, 2) : '') + ' ' + esc(i.unit); };
+  var kopt = src.map(function (i) { return '<option value="' + i.id + '">' + lab(i) + '</option>'; }).join('');
+  var dl = '<datalist id="dlItems">' + all.map(function (i) { return '<option value="' + esc(i.name) + '">'; }).join('') + '</datalist><datalist id="dlTitles">' + recipes.map(function (r) { return '<option value="' + esc(r.name) + '">'; }).join('') + '</datalist>';
+  var inRow = function () { return '<tr class="pi"><td><select class="ii">' + kopt + '</select><div class="hint iw"></div></td><td style="white-space:nowrap"><input class="iq" type="number" min="0" step="any" placeholder="how much" style="width:90px"> <button class="btn small ia" type="button" title="Use everything the kitchen has">all</button></td><td><button class="btn small xr" type="button">&times;</button></td></tr>'; };
+  var outRow = function () { return '<tr class="po"><td><input class="on" list="dlItems" placeholder="What you got (type or pick), e.g. Brochette"><div class="hint ow"></div><input class="ou" placeholder="Unit: stick, plate, piece..." style="width:170px;margin-top:4px;display:none"></td><td><input class="oq" type="number" min="0" step="any" placeholder="how many" style="width:90px"></td><td><input class="oe" type="date" title="Use by (optional)"></td><td><button class="btn small xr" type="button">&times;</button></td></tr>'; };
+  var md = modal('Make something', dl +
+    (recipes.length ? '<div class="f"><label>Saved recipe</label><div><select id="rcp" style="max-width:60%"><option value="">- start from scratch -</option>' + recipes.map(function (r) { return '<option value="' + r.id + '">' + esc(r.name) + ' (' + r.inputs.map(function (x) { return num(x.qty, 2) + ' ' + esc(x.unit) + ' ' + esc(x.name); }).join(' + ') + ' = ' + (r.result === 'STORE' ? r.outputs.map(function (x) { return num(x.qty, 2) + ' ' + esc(x.unit) + ' ' + esc(x.name); }).join(' + ') : (r.made_qty ? r.made_qty + ' ' + esc(r.made_unit) : 'record only')) + ')</option>'; }).join('') + '</select> <label>How many times <input id="rx" type="number" min="0.1" step="any" value="1" style="width:70px"></label></div></div>' : '') +
+    '<div class="f"><label>What are you making?</label><input id="pt" list="dlTitles" placeholder="Brochette, samosa, soup, cut chicken..."></div>' +
+    '<h4 style="margin:10px 0 4px">1. What did you use?</h4><table id="pin"></table><p><button class="btn small" id="ai" type="button">+ Another ingredient</button></p>' +
+    '<h4 style="margin:10px 0 4px">2. What did you get?</h4><label style="display:block"><input type="radio" name="pr" value="STORE" checked> New items for the store (for example brochette sticks)</label><label style="display:block"><input type="radio" name="pr" value="RECORD"> Just write it down - it was used in a dish, nothing goes back to the store</label>' +
+    '<div id="pst"><table id="pout"></table><p><button class="btn small" id="ao" type="button">+ Another product</button></p></div>' +
+    '<div id="prc" style="display:none" class="f"><label>How many did you make? (optional)</label><div><input id="mq" type="number" min="0" step="any" style="width:100px"> <input id="mu" placeholder="samosa, portions..." style="width:150px"></div></div>' +
+    '<p class="hint" id="costhint">The cost of what you used is shared over what you make, so the store knows what each piece cost.</p>' +
+    '<div class="f"><label>Note</label><input id="pn" placeholder="optional"></div><label id="svr" style="display:block"><input type="checkbox" id="sv"> Remember this as a recipe (next time I only pick it and say how many times)</label>', [['Cancel'], ['Save', function (m) {
+      var inputs = $$('.pi', m).filter(function (r) { return $('.iq', r).value !== ''; }).map(function (r) { return { item_id: +$('.ii', r).value, qty: $('.iq', r).value }; }), store = $('[name=pr]:checked', m).value === 'STORE';
+      var outputs = store ? $$('.po', m).filter(function (r) { return $('.on', r).value.trim() !== '' || $('.oq', r).value !== ''; }).map(function (r) { return { new_name: $('.on', r).value, new_unit: $('.ou', r).value, qty: $('.oq', r).value, expiry: $('.oe', r).value }; }) : [];
+      return call('foodProduce', { title: $('#pt', m).value, inputs: inputs, outputs: outputs, made_qty: $('#mq', m).value, made_unit: $('#mu', m).value, note: $('#pn', m).value, save_recipe: !!($('#sv', m).checked && !($('#rcp', m) && $('#rcp', m).value)) }).then(function () { toast(store ? 'Saved. What you made is now in the store.' : 'Saved.'); done(); });
+    }, 'primary']]);
+  var m = md.el, nameKey = function (v) { return String(v || '').trim().toLowerCase(); };
+  var checkIn = function (r) { var i = byId[+$('.ii', r).value], q = parseNum($('.iq', r).value), w = $('.iw', r); if (!i || !q) { w.textContent = ''; return; } var miss = Math.round((q - i.kitchen) * 100) / 100; w.className = 'hint iw'; if (miss <= 0) w.textContent = ''; else if (canIssue && miss <= i.store) w.textContent = num(miss, 2) + ' ' + i.unit + ' will be taken from the store for you.'; else { w.textContent = 'Not enough: ' + (canIssue ? 'only ' + num(i.kitchen + i.store, 2) + ' in kitchen and store.' : 'the kitchen has ' + num(i.kitchen, 2) + '. Ask the store for more.'); w.className = 'hint iw err'; } };
+  var checkOut = function (r) { var v = $('.on', r).value, hit = all.filter(function (i) { return nameKey(i.name) === nameKey(v); })[0], w = $('.ow', r); $('.ou', r).style.display = v.trim() && !hit ? '' : 'none'; w.textContent = hit ? 'Already an item (' + hit.unit + '): this adds to it.' : (v.trim() ? 'New item. It will be created.' : ''); };
+  var wire = function () {
+    $$('.xr', m).forEach(function (b) { b.onclick = function () { var tb = b.closest('table'); if ($$('tr', tb).filter(function (r) { return r.classList.contains('pi') || r.classList.contains('po'); }).length > 1) b.closest('tr').remove(); }; });
+    $$('.pi', m).forEach(function (r) { $('.ii', r).onchange = $('.iq', r).oninput = function () { checkIn(r); }; $('.ia', r).onclick = function () { var i = byId[+$('.ii', r).value]; if (i) { $('.iq', r).value = String(i.kitchen); checkIn(r); } }; });
+    $$('.po', m).forEach(function (r) { $('.on', r).oninput = $('.on', r).onchange = function () { checkOut(r); }; });
+  };
+  var addIn = function (id, q) { $('#pin', m).insertAdjacentHTML('beforeend', inRow()); var r = $$('.pi', m).pop(); if (id && byId[id]) { if (!$$('option', $('.ii', r)).some(function (o) { return +o.value === +id; })) $('.ii', r).insertAdjacentHTML('beforeend', '<option value="' + id + '">' + lab(byId[id]) + '</option>'); $('.ii', r).value = String(id); } if (q) $('.iq', r).value = String(q); wire(); checkIn(r); };
+  var addOut = function (id, q) { $('#pout', m).insertAdjacentHTML('beforeend', outRow()); var r = $$('.po', m).pop(); if (id && byId[id]) $('.on', r).value = byId[id].name; if (q) $('.oq', r).value = String(q); wire(); checkOut(r); };
+  var setResult = function (store) { $('[name=pr][value=' + (store ? 'STORE' : 'RECORD') + ']', m).checked = true; $('#pst', m).style.display = store ? '' : 'none'; $('#prc', m).style.display = store ? 'none' : ''; };
+  var fill = function (title, ins, outs, madeQ, madeU, k) {
+    k = k || 1; $('#pin', m).innerHTML = ''; $('#pout', m).innerHTML = ''; $('#pt', m).value = title || ''; var r2 = function (x) { return Math.round(x * k * 100) / 100; };
+    ins.forEach(function (x) { addIn(x.item_id, r2(x.qty)); }); if (!ins.length) addIn();
+    setResult(outs.length > 0 || !madeQ); outs.forEach(function (x) { addOut(x.item_id, r2(x.qty)); }); if (!outs.length) addOut(); $('#mq', m).value = madeQ ? r2(madeQ) : ''; $('#mu', m).value = madeU || '';
+  };
+  $('#ai', m).onclick = function () { addIn(); }; $('#ao', m).onclick = function () { addOut(); };
+  $$('[name=pr]', m).forEach(function (r) { r.onchange = function () { setResult($('[name=pr]:checked', m).value === 'STORE'); }; });
+  if ($('#rcp', m)) {
+    var useRecipe = function () { var r = recipes.filter(function (x) { return String(x.id) === $('#rcp', m).value; })[0]; $('#svr', m).style.display = r ? 'none' : ''; if (r) fill(r.name, r.inputs, r.outputs, r.made_qty, r.made_unit, parseNum($('#rx', m).value) || 1); };
+    $('#rcp', m).onchange = useRecipe; $('#rx', m).oninput = useRecipe;
+  }
+  if (pre.recipe_id && $('#rcp', m)) { $('#rcp', m).value = String(pre.recipe_id); $('#rcp', m).onchange(); }
+  else fill(pre.title || '', pre.inputs || [], pre.outputs || [], pre.made_qty, pre.made_unit);
+}
 
 var _hotelDash = PAGES.dashboard;
 PAGES.dashboard = function (el) { return IS_SHOP() ? shopDashboard(el) : _hotelDash(el); };
