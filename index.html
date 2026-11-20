@@ -293,6 +293,7 @@ function refreshChatBadge(soon) {
 }
 function navPages() {
   if (IS_SHOP()) return shopNav();
+  if (IS_RENTAL()) return rentalNav();
   var p = [];
   if (has('DASH')) p.push(['dashboard', 'Dashboard']);
   if (has('BOOKINGS', 'BOOKINGS_VIEW', 'ASSIGN')) p.push(['bookings', 'Bookings']);
@@ -1752,7 +1753,7 @@ async function adminUsers(el, body) {
     '<p class="hint">Roles: ' + ((SET.roles && SET.roles.length ? SET.roles : ['ADMIN', 'MANAGER', 'RECEPTION', 'HOUSEKEEPING', 'RESTAURANT', 'STOREKEEPER', 'KITCHEN', 'LAUNDRY', 'HR', 'OTHER']).join(', ')) + '. Use <b>Access...</b> to override per-user screens or assign departments.</p>';
   var roles = SET.roles && SET.roles.length ? SET.roles : ['ADMIN', 'MANAGER', 'RECEPTION', 'HOUSEKEEPING', 'RESTAURANT', 'STOREKEEPER', 'KITCHEN', 'LAUNDRY', 'HR', 'OTHER'];
   var edit = function (u) {
-    ask(u.id ? 'Edit ' + u.username : 'Add user', [['fn', 'Full name', 'text', u.full_name], ['un', 'Username', 'text', u.username], ['ro', 'Role', 'select', u.role || (IS_SHOP() ? 'CASHIER' : 'RECEPTION'), roles]].concat(u.id ? [['ac', 'Active', 'check', u.active]] : [['pw', 'Password (8+)', 'password']]), function (g) {
+    ask(u.id ? 'Edit ' + u.username : 'Add user', [['fn', 'Full name', 'text', u.full_name], ['un', 'Username', 'text', u.username], ['ro', 'Role', 'select', u.role || (IS_SHOP() ? 'CASHIER' : IS_RENTAL() ? 'AGENT' : 'RECEPTION'), roles]].concat(u.id ? [['ac', 'Active', 'check', u.active]] : [['pw', 'Password (8+)', 'password']]), function (g) {
       return call('saveUser', { id: u.id, full_name: g('fn'), username: g('un'), role: g('ro'), active: u.id ? (g('ac') ? 1 : 0) : 1, password: u.id ? undefined : g('pw') }).then(function () { PAGES.admin(el); });
     });
   };
@@ -1850,7 +1851,7 @@ async function adminAudit(el, body) {
 }
 
 async function adminSettings(el, body) {
-  body.innerHTML = '<div class="card"><h3>' + (IS_SHOP() ? 'Shop' : 'Hotel') + '</h3><div class="f" style="max-width:480px"><label>' + (IS_SHOP() ? 'Business name' : 'Hotel name') + '</label><input id="hn" value="' + esc(SET.hotel_name) + '"><label>Currency</label><input id="cu" value="' + esc(SET.currency) + '"></div><p><button class="btn primary" id="sv">Save</button></p></div><div class="card"><h3>Download a backup file</h3><p class="hint">Saves all hotel data (guests, bookings, bills, staff, settings...) as one file on this device. Keep it somewhere safe, for example once a week. Guest document photos and chat attachments are not inside this file.</p><button class="btn primary" id="dl">Download backup</button></div>';
+  body.innerHTML = '<div class="card"><h3>' + (IS_SHOP() ? 'Shop' : IS_RENTAL() ? 'Rental business' : 'Hotel') + '</h3><div class="f" style="max-width:480px"><label>' + (IS_SHOP() || IS_RENTAL() ? 'Business name' : 'Hotel name') + '</label><input id="hn" value="' + esc(SET.hotel_name) + '"><label>Currency</label><input id="cu" value="' + esc(SET.currency) + '"></div><p><button class="btn primary" id="sv">Save</button></p></div><div class="card"><h3>Download a backup file</h3><p class="hint">Saves all hotel data (guests, bookings, bills, staff, settings...) as one file on this device. Keep it somewhere safe, for example once a week. Guest document photos and chat attachments are not inside this file.</p><button class="btn primary" id="dl">Download backup</button></div>';
   if (IS_SHOP()) {
     var shs = await call('shopSettings');
     body.insertAdjacentHTML('afterbegin', '<div class="card"><h3>Selling</h3><label><input type="checkbox" id="neg"' + (shs.allow_negative ? ' checked' : '') + '> Allow selling a product even when the system shows none in stock</label><div class="f" style="max-width:480px"><label>Usual markup % over cost</label><input id="dmk" type="number" min="0" value="' + (shs.default_markup || '') + '"></div><p class="hint">The usual markup is suggested when you add products or record purchases, to work out selling prices. Leave the box above off to stop sales of items that are not in stock. Turn it on only if you do not keep your stock up to date.</p><p><button class="btn primary" id="svn">Save</button></p></div>');
@@ -2205,7 +2206,148 @@ async function foodProduceDialog(done, pre) {
 }
 
 var _hotelDash = PAGES.dashboard;
-PAGES.dashboard = function (el) { return IS_SHOP() ? shopDashboard(el) : _hotelDash(el); };
+// ====================================================================
+// HOUSE RENTALS SCREENS
+// ====================================================================
+var IS_RENTAL = function () { return SET && SET.business_type === 'rental'; };
+var RENT_METHODS_UI = [['CASH', 'Cash'], ['MOMO', 'Mobile money'], ['BANK', 'Bank']];
+function rentalNav() {
+  var p = [];
+  if (has('DASH')) p.push(['dashboard', 'Dashboard']);
+  if (has('RENT_PAY', 'RENT_TENANTS')) p.push(['rent', 'Rent']);
+  if (has('RENT_UNITS', 'RENT_TENANTS')) p.push(['properties', 'Properties and units']);
+  if (has('RENT_TENANTS')) p.push(['tenants', 'Tenants']);
+  if (has('RENT_EXPENSES')) p.push(['rexp', 'Expenses']);
+  if (has('HANDOVER')) p.push(['handover', 'Handover']);
+  if (has('RENT_REPORTS')) p.push(['reports', 'Reports']);
+  if (has('USERS') || has('ACCESS') || has('AUDIT') || has('SETTINGS')) p.push(['admin', 'Admin']);
+  return p;
+}
+function rentReceiptHtml(v) {
+  var ln = function (a, b, bold) { return '<tr' + (bold ? ' style="font-weight:700"' : '') + '><td>' + a + '</td><td style="text-align:right">' + b + '</td></tr>'; };
+  return '<div style="max-width:300px;font-family:monospace;font-size:13px"><h3 style="text-align:center;margin:0">' + esc(v.business) + '</h3><p style="text-align:center;margin:4px 0">' + (v.kind === 'DEPOSIT' ? 'DEPOSIT RECEIPT ' : 'RENT RECEIPT ') + esc(v.receipt_no) + '<br>' + esc(v.at) + (v.status === 'VOID' ? '<br><b>CANCELLED</b>' : '') + '</p>' +
+    '<table style="width:100%;border-top:1px dashed #000;border-bottom:1px dashed #000">' + ln('Tenant', esc(v.tenant)) + ln('Unit', esc(v.unit)) + ln('Paid by', esc(v.method)) + ln('Received by', esc(v.by)) + '</table><table style="width:100%">' +
+    ln('AMOUNT ' + esc(v.currency), num(v.amount), 1) + (v.kind === 'RENT' ? ln('Balance now', num(v.balance)) : '') + '</table><p style="text-align:center;margin-top:10px">Thank you!</p></div>';
+}
+function rentShowReceipt(id) {
+  return call('rentPayment', id).then(function (v) { modal('Receipt ' + v.receipt_no, rentReceiptHtml(v), [['Close'], ['Print', function () { $('#printArea').innerHTML = rentReceiptHtml(v); window.print(); return false; }, 'primary', 1]]); });
+}
+var rentBal = function (r) { return r.overdue > 0 ? '<b class="err">' + num(r.balance) + '</b>' : r.balance < 0 ? '<span class="ok">' + num(r.balance) + ' (credit)</span>' : num(r.balance); };
+
+async function rentalDashboard(el) {
+  var d = await call('rentDashboard'), k = kpi('Units', d.units) + kpi('Occupied', d.occupied + ' (' + d.occupancy + '%)') + kpi('Empty', d.vacant);
+  if (d.wide) {
+    k += kpi('Rent billed this month', money(d.billed_month)) + kpi('Collected this month', money(d.collected_month)) + kpi('Collected today', money(d.collected_today)) + kpi('Tenants owe in total', money(d.owed)) + kpi('Overdue', money(d.overdue) + ' (' + d.overdue_count + ' tenants)');
+    if (d.expenses_month !== undefined) k += kpi('Expenses this month', money(d.expenses_month)) + kpi('Left after expenses', money(d.net_month));
+  }
+  var warn = d.unbilled ? '<div class="card" style="background:#fff7e6"><b>' + d.unbilled + ' tenant' + (d.unbilled > 1 ? 's' : '') + ' not billed for this month yet.</b> ' + (has('RENT_PAY', 'RENT_TENANTS') ? '<button class="btn primary" id="bm">Bill this month\'s rent</button>' : '') + '</div>' : '';
+  el.innerHTML = '<h2>Dashboard</h2>' + warn + '<div class="grid">' + k + '</div>' + (d.wide ? '<div class="two"><div class="card"><h3>Most overdue</h3>' + table([{ h: 'Tenant', k: 'tenant' }, { h: 'Unit', k: 'unit' }, { h: 'Late', n: 1, f: function (r) { return r.days_late + ' days'; } }, { h: 'Overdue', n: 1, f: function (r) { return '<b class="err">' + num(r.overdue) + '</b>'; } }], d.worst, { empty: 'Nobody is overdue.' }) + '</div><div class="card"><h3>Leases ending in 60 days</h3>' + table([{ h: 'Tenant', k: 'tenant' }, { h: 'Unit', k: 'unit' }, { h: 'Ends', k: 'end_date' }], d.ending, { empty: 'None.' }) + '</div></div>' : '');
+  var bm = $('#bm', el); if (bm) bm.onclick = function () { act(call('rentBill').then(function (r) { toast(r.charges + ' rent charges added.'); rentalDashboard(el); })); };
+}
+
+// ---- pay, charge, lease dialogs ----
+function rentPayDialog(l, done) {
+  ask('Rent from ' + l.tenant + ' - ' + l.unit, [['a', 'Amount' + (l.balance > 0 ? ' (owes ' + num(l.balance) + ')' : ''), 'number', l.balance > 0 ? l.balance : l.rent], ['m', 'Paid by', 'select', 'CASH', RENT_METHODS_UI], ['d', 'Date paid', 'date', TODAY], ['n', 'Note (optional)', 'text']], function (g) {
+    return call('rentPay', { lease_id: l.id, amount: g('a'), method: g('m'), paid_on: g('d'), note: g('n') }).then(function (r) { toast('Payment saved. Receipt ' + r.receipt_no); if (done) done(); rentShowReceipt(r.id); });
+  }, 'Save payment');
+}
+function rentChargeDialog(l, done) {
+  ask('Add a charge for ' + l.tenant, [['d', 'What is it for? (water, repairs...)', 'text'], ['a', 'Amount' + (has('RENT_VOID') ? ' (use a minus to waive or reduce)' : ''), 'number'], ['o', 'Due date', 'date', TODAY]], function (g) { return call('rentAddCharge', { lease_id: l.id, description: g('d'), amount: g('a'), due_date: g('o') }).then(function () { toast('Saved.'); if (done) done(); }); }, 'Save');
+}
+async function rentLeaseDialog(done, unitId) {
+  var us = (await call('rentUnits')).filter(function (u) { return u.status === 'VACANT'; }), tn = await call('rentTenants');
+  if (!us.length) return toast('There is no empty unit. Add a unit first, or end a lease.', true);
+  var m = ask('New lease (a tenant moves in)', [['u', 'Unit', 'select', unitId || us[0].id, us.map(function (u) { return [u.id, u.property + ' / ' + u.name + ' (' + num(u.rent) + ')']; })], ['t', 'Tenant', 'select', '', [['', '- new tenant -']].concat(tn.map(function (t) { return [t.id, t.full_name + (t.phone ? ' - ' + t.phone : '')]; }))], ['nn', 'New tenant: full name', 'text'], ['np', 'New tenant: phone', 'text'], ['s', 'Moves in on', 'date', TODAY], ['r', 'Rent per month', 'number', us[0].rent], ['dd', 'Rent is due on day (1-28)', 'number', 5], ['dp', 'Deposit paid now (if any)', 'number', ''], ['ob', 'Already owes from before (if any)', 'number', ''], ['e', 'Lease ends on (optional)', 'date', '']], function (g) {
+    return call('rentLeaseCreate', { unit_id: g('u'), tenant_id: g('t'), tenant_name: g('nn'), tenant_phone: g('np'), start_date: g('s'), rent: g('r'), due_day: g('dd'), deposit_paid: g('dp'), opening_balance: g('ob'), end_date: g('e') }).then(function () { toast('Lease started.'); if (done) done(); });
+  }, 'Start lease');
+  var sync = function () { var u = us.filter(function (x) { return String(x.id) === $('#f_u', m.el).value; })[0]; if (u) { $('#f_r', m.el).value = u.rent || ''; $('#f_dp', m.el).placeholder = u.deposit ? 'usual deposit: ' + num(u.deposit) : ''; } };
+  $('#f_u', m.el).onchange = sync; sync();
+}
+async function rentStatement(id, done) {
+  var s = await call('rentStatement', id), l = s.lease, btn = [['Close']];
+  if (l.status === 'ACTIVE') {
+    if (has('RENT_PAY')) btn.push(['Receive rent', function (m, close) { close(); rentPayDialog(l, done); return false; }, 'primary', 1], ['Add charge', function (m, close) { close(); rentChargeDialog(l, done); return false; }, '', 1]);
+    if (has('RENT_TENANTS')) btn.push(['Change rent', function (m, close) { close(); ask('Change lease', [['r', 'Rent per month (from the next month billed)', 'number', l.rent], ['dd', 'Due day (1-28)', 'number', l.due_day], ['e', 'Lease ends on', 'date', l.end_date || '']], function (g) { return call('rentLeaseEdit', { id: l.id, rent: g('r'), due_day: g('dd'), end_date: g('e') }).then(function () { toast('Saved.'); if (done) done(); }); }); return false; }, '', 1],
+      ['End lease', function (m, close) { close(); var held = s.deposit_held; ask('End lease: ' + l.tenant, [['o', 'Moves out on', 'date', TODAY], ['b', 'Deposit paid back to tenant (held ' + num(held) + ')', 'number', ''], ['u', 'Deposit used to pay rent owed', 'number', ''], ['n', 'Note', 'text']], function (g) { return call('rentLeaseEnd', { id: l.id, ended_on: g('o'), deposit_back: g('b'), deposit_use: g('u'), note: g('n') }).then(function (r) { toast(r.balance > 0 ? 'Lease ended. The tenant still owes ' + num(r.balance) + '.' : 'Lease ended.'); if (done) done(); }); }, 'End lease'); return false; }, 'danger', 1]);
+  }
+  modal(l.tenant + ' - ' + l.unit, '<p>' + (l.status === 'ENDED' ? '<span class="pill CANCELLED">Ended ' + esc(l.ended_on) + '</span> ' : '') + 'Rent <b>' + money(l.rent) + '</b> per month, due on day ' + l.due_day + '. Since ' + esc(l.start_date) + '. ' + (l.phone ? 'Phone ' + esc(l.phone) + '. ' : '') + '<br>Balance: <b>' + money(l.balance) + '</b>' + (l.overdue > 0 ? ' (overdue ' + money(l.overdue) + ', ' + l.days_late + ' days late)' : '') + '. Deposit held: <b>' + money(s.deposit_held) + '</b>.</p>' +
+    table([{ h: 'Date', k: 'at' }, { h: 'What', k: 'what' }, { h: 'Charged', n: 1, f: function (r) { return r.charge ? num(r.charge) : ''; } }, { h: 'Paid', n: 1, f: function (r) { return r.pay ? num(r.pay) : ''; } }, { h: 'Balance', n: 1, f: function (r) { return num(r.balance); } }], s.rows, { empty: 'Nothing billed yet.' }), btn);
+}
+
+// ---- the Rent page ----
+PAGES.rent = async function (el) {
+  var tabs = [['leases', 'Tenants and rent'], ['overdue', 'Overdue and reminders'], ['pays', 'Payments']], tab = SUB.rt = tabs.some(function (t) { return t[0] === SUB.rt; }) ? SUB.rt : 'leases', back = function () { PAGES.rent(el); };
+  el.innerHTML = '<h2>Rent</h2>' + tabBar(tabs, tab) + '<div id="rb"></div>'; el.querySelector('.tabs').onclick = function (e) { var b = e.target.closest('button'); if (b) { SUB.rt = b.dataset.t; back(); } };
+  var body = $('#rb', el);
+  if (tab === 'leases') {
+    var f = SUB.rl = SUB.rl || { q: '', st: 'ACTIVE' };
+    body.innerHTML = '<div class="bar"><input id="q" placeholder="Search tenant, unit or phone" value="' + esc(f.q) + '"><select id="st"><option value="ACTIVE">Living there now</option><option value="ENDED">Moved out</option><option value="ALL">All</option></select><span style="flex:1"></span>' + (has('RENT_PAY', 'RENT_TENANTS') ? '<button class="btn" id="bm" title="Adds this month\'s rent to every tenant who has not been billed yet">Bill this month</button>' : '') + (has('RENT_TENANTS') ? '<button class="btn primary" id="nl">New lease</button>' : '') + '</div><div class="card" id="ll"></div>';
+    $('#st', body).value = f.st; var all = [], draw = function () {
+      f.q = $('#q', body).value; var q = f.q.toLowerCase(), rows = all.filter(function (r) { return !q || (r.tenant + ' ' + r.unit + ' ' + r.phone).toLowerCase().indexOf(q) >= 0; });
+      $('#ll', body).innerHTML = '<p class="hint">' + rows.length + (rows.length === 1 ? ' tenant' : ' tenants') + '. Tap a row to see the account.</p>' + table([{ h: 'Unit', k: 'unit' }, { h: 'Tenant', k: 'tenant' }, { h: 'Phone', k: 'phone' }, { h: 'Rent', n: 1, f: function (r) { return num(r.rent); } }, { h: 'Balance', n: 1, f: rentBal }, { h: 'Late', n: 1, f: function (r) { return r.days_late ? r.days_late + ' days' : ''; } }, { h: '', f: function (r) { return r.status === 'ACTIVE' && has('RENT_PAY') ? '<button class="btn small primary" data-p="' + r.id + '">Receive</button>' : ''; } }], rows, { click: 1, empty: 'No tenants here yet. Use "New lease" when a tenant moves in.' });
+      wireRows($('#ll', body), rows, function (r) { rentStatement(r.id, back); }); $$('[data-p]', body).forEach(function (b) { b.onclick = function () { rentPayDialog(all.filter(function (r) { return r.id === +b.dataset.p; })[0], back); }; });
+    };
+    var load = async function () { f.st = $('#st', body).value; all = await call('rentLeases', { status: f.st }); draw(); };
+    $('#q', body).oninput = draw; $('#st', body).onchange = load; var nl = $('#nl', body); if (nl) nl.onclick = function () { rentLeaseDialog(back); };
+    var bm = $('#bm', body); if (bm) bm.onclick = function () { act(call('rentBill').then(function (r) { toast(r.charges ? r.charges + ' rent charges added.' : 'Everyone is already billed for this month.'); back(); })); }; await load();
+  } else if (tab === 'overdue') {
+    var rem = await call('rentReminders');
+    body.innerHTML = '<div class="card"><p class="hint">Tenants who are late. Tap Call, or SMS to open your phone\'s messages with the reminder already written. Copy is for WhatsApp.</p>' + table([{ h: 'Tenant', k: 'tenant' }, { h: 'Unit', k: 'unit' }, { h: 'Late', n: 1, f: function (r) { return r.days_late + ' days'; } }, { h: 'Overdue', n: 1, f: function (r) { return '<b class="err">' + num(r.overdue) + '</b>'; } }, { h: '', f: function (r, i) { return (r.phone ? '<a class="btn small" href="tel:' + esc(r.phone) + '">Call</a> <a class="btn small" href="sms:' + esc(r.phone) + '?body=' + encodeURIComponent(r.text) + '">SMS</a> ' : '') + '<button class="btn small" data-c="' + r.lease_id + '">Copy</button> <button class="btn small primary" data-p="' + r.lease_id + '">Receive</button>'; } }], rem, { empty: 'Nobody is overdue. Well done!' }) + '</div>';
+    $$('[data-c]', body).forEach(function (b) { b.onclick = function () { var r = rem.filter(function (x) { return x.lease_id === +b.dataset.c; })[0]; if (navigator.clipboard) navigator.clipboard.writeText(r.text).then(function () { toast('Message copied.'); }, function () { toast('Could not copy.', true); }); }; });
+    $$('[data-p]', body).forEach(function (b) { b.onclick = async function () { var rows = await call('rentLeases', { status: 'ACTIVE' }); rentPayDialog(rows.filter(function (r) { return r.id === +b.dataset.p; })[0], back); }; });
+  } else {
+    var pf = SUB.rpf = SUB.rpf || { from: TODAY.slice(0, 8) + '01', to: TODAY };
+    body.innerHTML = '<div class="bar">' + shopDateBar(pf, '<button class="btn primary" id="go">Show</button>') + '</div><div id="pl"></div>';
+    var ld = async function () {
+      pf.from = $('#df', body).value; pf.to = $('#dt', body).value; var rows = await call('rentPayments', pf), tot = rows.filter(function (r) { return r.status !== 'VOID' && r.kind === 'RENT'; }).reduce(function (s, r) { return s + r.amount; }, 0);
+      $('#pl', body).innerHTML = '<div class="grid">' + kpi('Rent received', money(tot)) + '</div><div class="card">' + table([{ h: 'When', k: 'at' }, { h: 'Receipt', k: 'receipt_no' }, { h: 'Tenant', k: 'tenant' }, { h: 'Unit', k: 'unit' }, { h: 'Type', f: function (r) { return r.kind === 'DEPOSIT' ? 'Deposit' : 'Rent'; } }, { h: 'By', k: 'method' }, { h: 'Amount', n: 1, f: function (r) { return r.status === 'VOID' ? '<s>' + num(r.amount) + '</s> ' + pillL('CANCELLED', 'Cancelled') : num(r.amount); } }, { h: 'Received by', k: 'by' }, { h: '', f: function (r) { return '<button class="btn small" data-r="' + r.id + '">Receipt</button> ' + (has('RENT_VOID') && r.status !== 'VOID' ? '<button class="btn small danger" data-v="' + r.id + '">Cancel</button>' : ''); } }], rows, { empty: 'No payments in these dates.' }) + '</div>';
+      $$('[data-r]', body).forEach(function (b) { b.onclick = function () { rentShowReceipt(+b.dataset.r); }; });
+      $$('[data-v]', body).forEach(function (b) { b.onclick = function () { ask('Cancel this payment', [['w', 'Why?', 'text']], function (g) { return call('rentPaymentVoid', +b.dataset.v, g('w')).then(function () { toast('Payment cancelled.'); ld(); }); }, 'Cancel payment'); }; });
+    };
+    $('#go', body).onclick = ld; await ld();
+  }
+};
+
+// ---- properties and units ----
+PAGES.properties = async function (el) {
+  var back = function () { PAGES.properties(el); }, edit = !!has('RENT_UNITS'), pr = await call('rentProperties'), f = SUB.pf = SUB.pf || { pid: '' }, us = await call('rentUnits', { property_id: f.pid || undefined, active: 'ALL' });
+  el.innerHTML = '<h2>Properties and units</h2><div class="card" id="pc"><div class="bar"><h3 style="margin:0">Properties</h3><span style="flex:1"></span>' + (edit ? '<button class="btn primary" id="np">Add property</button>' : '') + '</div>' + table([{ h: 'Property', k: 'name' }, { h: 'Address', k: 'address' }, { h: 'Units', n: 1, k: 'units' }, { h: 'Occupied', n: 1, k: 'occupied' }], pr, { click: edit, empty: 'Add your first property (a building or compound).' }) + '</div>' +
+    '<div class="card" id="uc"><div class="bar"><h3 style="margin:0">Units</h3><select id="fp"><option value="">All properties</option>' + pr.map(function (p) { return '<option value="' + p.id + '"' + (String(p.id) === String(f.pid) ? ' selected' : '') + '>' + esc(p.name) + '</option>'; }).join('') + '</select><span style="flex:1"></span>' + (edit && pr.length ? '<button class="btn primary" id="nu">Add unit</button>' : '') + '</div>' +
+    table([{ h: 'Property', k: 'property' }, { h: 'Unit', k: 'name' }, { h: 'Type', k: 'kind' }, { h: 'Rent', n: 1, f: function (u) { return num(u.rent); } }, { h: 'Status', f: function (u) { return !u.active ? pillL('CANCELLED', 'Switched off') : u.status === 'OCCUPIED' ? pillL('DONE', 'Occupied') : pillL('PENDING', 'Empty'); } }, { h: 'Tenant', k: 'tenant' }, { h: 'Balance', n: 1, f: function (u) { return u.lease_id ? num(u.balance) : ''; } }, { h: '', f: function (u) { return u.active && u.status === 'VACANT' && has('RENT_TENANTS') ? '<button class="btn small primary" data-l="' + u.id + '">Start lease</button>' : ''; } }], us, { click: 1, empty: 'No units yet.' }) + '</div>';
+  var pEdit = function (p) { p = p || {}; ask(p.id ? 'Edit property' : 'Add property', [['n', 'Name (e.g. Kimironko Block A)', 'text', p.name], ['a', 'Address', 'text', p.address], ['t', 'Notes', 'text', p.notes]], function (g) { return call('rentSaveProperty', { id: p.id, name: g('n'), address: g('a'), notes: g('t'), active: 1 }).then(back); }); };
+  var uEdit = function (u) { u = u || {}; ask(u.id ? 'Edit unit' : 'Add unit', [['p', 'Property', 'select', u.property_id || f.pid || pr[0].id, pr.map(function (p) { return [p.id, p.name]; })], ['n', 'Unit name (House 3, Room A, Shop 2)', 'text', u.name], ['k', 'Type', 'select', u.kind || 'House', ['House', 'Apartment', 'Room', 'Shop', 'Office', 'Other']], ['r', 'Rent per month', 'number', u.rent], ['d', 'Usual deposit', 'number', u.deposit]].concat(u.id ? [['ac', 'In use', 'check', u.active]] : []), function (g) { return call('rentSaveUnit', { id: u.id, property_id: g('p'), name: g('n'), kind: g('k'), rent: g('r'), deposit: g('d'), active: u.id ? (g('ac') ? 1 : 0) : 1 }).then(back); }); };
+  var np = $('#np', el); if (np) np.onclick = function () { pEdit(); }; var nu = $('#nu', el); if (nu) nu.onclick = function () { uEdit(); };
+  $('#fp', el).onchange = function () { f.pid = this.value; back(); };
+  if (edit) wireRows($('#pc', el), pr, pEdit);
+  wireRows($('#uc', el), us, function (u) { if (u.lease_id) rentStatement(u.lease_id, back); else if (edit) uEdit(u); });
+  $$('[data-l]', el).forEach(function (b) { b.onclick = function () { rentLeaseDialog(back, +b.dataset.l); }; });
+};
+
+// ---- tenants ----
+PAGES.tenants = async function (el) {
+  var all = await call('rentTenants', { active: 'ALL' }), f = SUB.tf = SUB.tf || { q: '' };
+  el.innerHTML = '<h2>Tenants</h2><div class="bar"><input id="q" placeholder="Search name or phone" value="' + esc(f.q) + '"><span style="flex:1"></span><button class="btn primary" id="nt">Add tenant</button></div><div class="card" id="tl"></div>';
+  var edit = function (t) { t = t || {}; ask(t.id ? 'Edit tenant' : 'Add tenant', [['n', 'Full name', 'text', t.full_name], ['p', 'Phone', 'text', t.phone], ['i', 'National ID', 'text', t.national_id], ['e', 'Email', 'text', t.email], ['t', 'Notes', 'text', t.notes]].concat(t.id ? [['ac', 'Active', 'check', t.active]] : []), function (g) { return call('rentSaveTenant', { id: t.id, full_name: g('n'), phone: g('p'), national_id: g('i'), email: g('e'), notes: g('t'), active: t.id ? (g('ac') ? 1 : 0) : 1 }).then(function () { PAGES.tenants(el); }); }); };
+  var d1 = function () { f.q = $('#q', el).value; var q = f.q.toLowerCase(), rows = all.filter(function (t) { return !q || (t.full_name + ' ' + t.phone).toLowerCase().indexOf(q) >= 0; }); $('#tl', el).innerHTML = table([{ h: 'Name', k: 'full_name' }, { h: 'Phone', k: 'phone' }, { h: 'National ID', k: 'national_id' }, { h: 'Living in', k: 'units' }], rows, { click: 1, empty: 'No tenants yet.' }); wireRows($('#tl', el), rows, edit); };
+  $('#q', el).oninput = d1; $('#nt', el).onclick = function () { edit(); }; d1();
+};
+
+// ---- property expenses ----
+PAGES.rexp = async function (el) {
+  var f = SUB.rxf = SUB.rxf || { from: TODAY.slice(0, 8) + '01', to: TODAY }, pr = await call('rentProperties'), us = await call('rentUnits');
+  var cats = ['Repairs', 'Water', 'Electricity', 'Cleaning', 'Security', 'Taxes and licences', 'Agent fees', 'Insurance', 'Other'];
+  el.innerHTML = '<h2>Expenses</h2><div class="bar">' + shopDateBar(f, '<button class="btn primary" id="go">Show</button><button class="btn primary" id="na">Add expense</button>') + '</div><div id="xl"></div>';
+  var load = async function () {
+    f.from = $('#df', el).value; f.to = $('#dt', el).value; var rows = await call('rentExpenses', f), tot = rows.reduce(function (s, x) { return s + x.amount; }, 0);
+    $('#xl', el).innerHTML = '<div class="grid">' + kpi('Total spent', money(tot)) + '</div><div class="card">' + table([{ h: 'Date', k: 'spent_on' }, { h: 'Property', k: 'property' }, { h: 'Unit', k: 'unit' }, { h: 'Category', k: 'category' }, { h: 'Amount', n: 1, f: function (x) { return num(x.amount); } }, { h: 'Note', k: 'note' }, { h: '', f: function (x) { return '<button class="btn small danger" data-d="' + x.id + '">Delete</button>'; } }], rows, { empty: 'No expenses in these dates.' }) + '</div>';
+    $$('[data-d]', el).forEach(function (b) { b.onclick = function () { sure('Delete this expense?', function () { return call('rentDeleteExpense', +b.dataset.d).then(load); }, 'Delete'); }; });
+  };
+  $('#go', el).onclick = load;
+  $('#na', el).onclick = function () { ask('Add expense', [['c', 'What for', 'select', 'Repairs', cats], ['u', 'Which unit (optional)', 'select', '', [['', '- the whole property / general -']].concat(us.map(function (u) { return [u.id, u.property + ' / ' + u.name]; }))], ['p', 'Or which property (optional)', 'select', '', [['', '-']].concat(pr.map(function (p) { return [p.id, p.name]; }))], ['a', 'Amount', 'number'], ['d', 'Date', 'date', TODAY], ['n', 'Note', 'text']], function (g) { return call('rentAddExpense', { category: g('c'), unit_id: g('u'), property_id: g('p'), amount: g('a'), spent_on: g('d'), note: g('n') }).then(function () { toast('Saved.'); load(); }); }); };
+  await load();
+};
+
+PAGES.dashboard = function (el) { return IS_SHOP() ? shopDashboard(el) : IS_RENTAL() ? rentalDashboard(el) : _hotelDash(el); };
 
 restore();
 </script>
