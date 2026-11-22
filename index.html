@@ -1391,9 +1391,20 @@ PAGES.food = async function (el) {
       if (!pc || !pc.last) { box.textContent = pc ? 'No earlier price on record for this item.' : ''; box.style.color = ''; return pc; }
       box.textContent = 'Last paid: ' + money(pc.last) + ' per ' + pc.unit + (pc.supplier ? ' (' + pc.supplier + (pc.at ? ', ' + pc.at : '') + ')' : '') + (c !== '' && pc.pct ? '. This one: ' + (pc.pct > 0 ? '+' : '') + pc.pct + '%' : '') + (pc.jump ? ' - a big jump!' : ''); box.style.color = pc.jump ? '#dc2626' : ''; return pc;
     };
-    $('#f_i', el).onchange = lastPrice; $('#f_c', el).oninput = lastPrice; lastPrice();
+    var selI = $('#f_i', el), allOpts = its.map(function (i) { return { id: i.id, text: i.name + ' (' + i.unit + ')', find: (i.name + ' ' + (i.category || '')).toLowerCase() }; }), srI = document.createElement('input');
+    srI.id = 'isr'; srI.type = 'search'; srI.placeholder = 'Search the item (type part of its name)...'; srI.autocomplete = 'off'; srI.style.cssText = 'display:block;margin-bottom:6px;min-width:260px'; selI.parentNode.insertBefore(srI, selI);
+    var cnI = document.createElement('div'); cnI.className = 'hint'; cnI.id = 'isn'; selI.parentNode.appendChild(cnI);
+    var fillI = function () {
+      var words = srI.value.toLowerCase().split(/\s+/).filter(Boolean), keep = selI.value, hit = allOpts.filter(function (o) { return words.every(function (w) { return o.find.indexOf(w) >= 0; }); });
+      selI.innerHTML = hit.length ? hit.map(function (o) { return '<option value="' + o.id + '">' + esc(o.text) + '</option>'; }).join('') : '<option value="">No item matches</option>';
+      if (hit.some(function (o) { return String(o.id) === keep; })) selI.value = keep;
+      cnI.textContent = words.length ? hit.length + ' of ' + allOpts.length + ' items match' : allOpts.length + ' items'; lastPrice();
+    };
+    srI.oninput = fillI; srI.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); $('#f_q', el).focus(); } };
+    selI.onchange = lastPrice; $('#f_c', el).oninput = lastPrice; cnI.textContent = allOpts.length + ' items'; lastPrice();
     $('#rc', el).onclick = async function () {
       var g = function (k) { return val($('#rf', el), k); }, send = function () { return call('foodReceive', { item_id: +g('i'), qty: g('q'), unit_cost: g('c'), expiry: g('x'), supplier: g('s'), invoice: g('v'), note: g('n') }).then(function () { toast('Received.'); back(); }); };
+      if (!+g('i')) { toast('Choose the item first.', true); return; }
       var pc = await lastPrice();
       if (pc && pc.jump) sure('Price warning: ' + pc.name + ' was last bought at ' + money(pc.last) + ' per ' + pc.unit + (pc.supplier ? ' from ' + pc.supplier : '') + '. This delivery is ' + money(g('c')) + ' (+' + pc.pct + '%). Receive it anyway?', send, 'Receive anyway'); else act(send());
     };
