@@ -140,7 +140,7 @@ function showBlocked(r) {
   b.querySelector('p').textContent = r.error; document.body.appendChild(b); document.getElementById('blockedGo').onclick = function () { location.reload(); };
 }
 function server(fn, args) {
-  var LONG = { restoreData: 1, backupData: 1, backupPeek: 1 }, slow = (fn === 'api' && args && LONG[args[1]]) || (fn === 'apiBatch' && args && (args[1] || []).some(function (c) { return LONG[c[0]]; }));
+  var LONG = { restoreData: 1, backupData: 1, backupPeek: 1, askAi: 1 }, slow = (fn === 'api' && args && LONG[args[1]]) || (fn === 'apiBatch' && args && (args[1] || []).some(function (c) { return LONG[c[0]]; }));
   var ctl = new AbortController(), tm = setTimeout(function () { ctl.abort(); }, slow ? 300000 : 30000);
   return fetch(window.HOTEL_API, { method: 'POST', headers: window.HOTEL_REGION ? { 'Content-Type': 'text/plain', 'x-region': window.HOTEL_REGION } : { 'Content-Type': 'text/plain' }, body: JSON.stringify({ fn: fn, args: args, t: bizCode(), h: location.hostname }), signal: ctl.signal })
     .then(function (r) { clearTimeout(tm); return r.json(); })
@@ -291,7 +291,8 @@ function refreshChatBadge(soon) {
   }).catch(function () {});
   again();
 }
-function navPages() {
+function navPages() { var p = navPages0(); if (SET && SET.ai && has('REPORTS', 'HR_REPORTS', 'SHOP_REPORTS', 'SHOP_COSTS', 'RENT_REPORTS', 'FOOD_STORE', 'MAINT', 'INVENTORY', 'PURCHASE_APPROVE', 'LOST_FOUND')) { var i = p.map(function (x) { return x[0]; }).indexOf('admin'); p.splice(i < 0 ? p.length : i, 0, ['ask', 'Ask AI']); } return p; }
+function navPages0() {
   if (IS_SHOP()) return shopNav();
   if (IS_RENTAL()) return rentalNav();
   var p = [];
@@ -1648,6 +1649,30 @@ async function staffDocsModal(s) {
 // ====================================================================
 // MESSAGES PAGE (Chat)
 // ====================================================================
+/** Ask the assistant: plain questions, answered from the reports this person may already read. It cannot change anything. */
+PAGES.ask = async function (el) {
+  SUB.askH = SUB.askH || [];
+  var tips = IS_SHOP() ? ['How much did we sell this week?', 'Which products are almost out of stock?', 'Who owes us money?'] : IS_RENTAL() ? ['How much rent did we collect this month?', 'Which tenants are late?', 'Which units are empty?'] : ['How much money did we earn this month?', 'How was occupancy last week?', 'Which guests still owe money?', 'What did the restaurant sell yesterday?'];
+  el.innerHTML = '<h2>Ask AI</h2><p class="hint">Ask in plain words, in English or Kinyarwanda. The assistant only reads your reports and cannot change anything. Your question and the figures needed to answer it are sent to the AI service (Anthropic). Check important numbers in Reports.</p><div class="bar" id="askTips"></div><div id="askLog" class="card" style="min-height:140px"></div><div class="bar"><input id="askQ" style="flex:1;min-width:220px" maxlength="600" placeholder="Type your question..."><button class="btn primary" id="askGo">Ask</button><button class="btn" id="askClr">New chat</button></div>';
+  var log = $('#askLog', el), q = $('#askQ', el), fmt = function (t) { return esc(t).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/\n/g, '<br>'); };
+  var paint = function () { log.innerHTML = SUB.askH.length ? SUB.askH.map(function (m) { return m.role === 'user' ? '<p style="text-align:right"><span style="background:var(--navy2);color:#fff;border-radius:12px;padding:6px 12px;display:inline-block;max-width:85%;text-align:left">' + esc(m.text) + '</span></p>' : '<p><span style="background:var(--line);border-radius:12px;padding:6px 12px;display:inline-block;max-width:92%">' + fmt(m.text) + '</span>' + (m.used && m.used.length ? '<br><small class="hint">Based on: ' + esc(m.used.join('; ')) + '</small>' : '') + '</p>'; }).join('') : '<p class="hint">No questions yet. Try one of the examples above.</p>'; log.scrollTop = log.scrollHeight; };
+  $('#askTips', el).innerHTML = tips.map(function (t, i) { return '<button class="btn small" data-i="' + i + '">' + esc(t) + '</button>'; }).join('');
+  var send = async function (text) {
+    text = String(text || '').trim(); if (!text || SUB.askBusy) return; SUB.askBusy = 1; q.value = ''; var hist = SUB.askH.map(function (m) { return { role: m.role, text: m.text }; });
+    SUB.askH.push({ role: 'user', text: text }); paint(); log.insertAdjacentHTML('beforeend', '<p class="hint" id="askWait">Thinking...</p>'); $('#askGo', el).disabled = true;
+    try {
+      var r = await server('api', [TOKEN, 'askAi', [text, hist]]);
+      if (r && r.data && r.data.expired) { signOut(true); return; }
+      if (!r.ok) { SUB.askH.push({ role: 'assistant', text: r.error }); } else SUB.askH.push({ role: 'assistant', text: r.data.answer, used: r.data.used });
+    } catch (e) { SUB.askH.push({ role: 'assistant', text: e.message || 'Connection problem. Check the internet and try again.' }); }
+    SUB.askBusy = 0; $('#askGo', el).disabled = false; paint(); q.focus();
+  };
+  $('#askGo', el).onclick = function () { send(q.value); }; q.onkeydown = function (e) { if (e.key === 'Enter') send(q.value); };
+  $('#askClr', el).onclick = function () { SUB.askH = []; paint(); };
+  $('#askTips', el).onclick = function (e) { var b = e.target.closest('button'); if (b) send(tips[+b.dataset.i]); };
+  paint();
+};
+
 PAGES.messages = async function (el) {
   var cd = await Promise.all([call('chatConversations'), call('deptList')]), convs = cd[0], depts = cd[1];
 
