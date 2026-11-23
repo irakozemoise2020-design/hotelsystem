@@ -190,7 +190,7 @@
  "Ask an administrator to tick your screens in Admin &rarr; Access Control.": "Saba umuyobozi aguhe uburenganzira muri Ubuyobozi → Kugenzura uburenganzira.",
  "Ask an administrator to tick your screens in Admin → Access Control.": "Saba umuyobozi aguhe uburenganzira muri Ubuyobozi → Kugenzura uburenganzira.",
  "Ask for linen": "Saba imyenda yo mu buriri",
- "Ask in plain words, in English or Kinyarwanda. The assistant only reads your reports and cannot change anything. Your question and the figures needed to answer it are sent to the AI service (Anthropic). Check important numbers in Reports.": "Baza mu magambo yoroshye, mu Cyongereza cyangwa mu Kinyarwanda. Umufasha asoma raporo zawe gusa kandi nta kintu ahindura. Ikibazo cyawe n'imibare ikenewe mu gusubiza byoherezwa kuri serivisi ya AI (Anthropic). Genzura imibare y'ingenzi muri Raporo.",
+ "Ask in plain words, in English or Kinyarwanda. The local assistant only reads the reports you are allowed to see and cannot change anything. No question or report data is sent to an AI provider. Check important numbers in Reports.": "Baza mu magambo yoroshye, mu Cyongereza cyangwa mu Kinyarwanda. Umufasha wo muri sisitemu asoma raporo wemerewe gusa kandi nta kintu ahindura. Ikibazo cyawe cyangwa imibare ya raporo ntibyoherezwa ku kigo cya AI. Genzura imibare y'ingenzi muri Raporo.",
  "Ask the laundry for linen": "Saba imyenda aho kumesa",
  "Ask the store for food": "Saba ububiko ibiribwa",
  "Asked": "Byasabwe",

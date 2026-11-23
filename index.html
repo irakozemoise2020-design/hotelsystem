@@ -247,7 +247,7 @@ function draw() {
   $('#nav').onclick = function (e) { var b = e.target.closest('button'); if (b) { PAGE = b.dataset.p; draw(); } };
   $('#out').onclick = function () { signOut(); };
   $('#pw').onclick = changePassword;
-  if ($('#aiBtn')) $('#aiBtn').onclick = function () { if (!SET.ai) { toast('The AI assistant is not switched on yet. The AI key must be added to the server (see SETUP_STAGE29.txt).', true); return; } PAGE = 'ask'; draw(); };
+  if ($('#aiBtn')) $('#aiBtn').onclick = function () { PAGE = 'ask'; draw(); };
   if ($('#chatBtn')) $('#chatBtn').onclick = function () { PAGE = 'messages'; draw(); };
   if (!pages.length) {
     $('#page').innerHTML = '<h2>No access yet</h2><p class="hint">Ask an administrator to tick your screens in Admin &rarr; Access Control.</p>';
@@ -292,10 +292,10 @@ function refreshChatBadge(soon) {
   }).catch(function () {});
   again();
 }
-/** The robot button in the top bar: opens the assistant. Shown to people who can read reports; an administrator also sees it when the assistant is not switched on yet, with an explanation. */
+/** The robot button opens the local data assistant for people who can read reports. */
 function aiButton() {
   var rep = has('REPORTS', 'HR_REPORTS', 'SHOP_REPORTS', 'SHOP_COSTS', 'RENT_REPORTS', 'FOOD_STORE', 'MAINT', 'INVENTORY', 'PURCHASE_APPROVE', 'LOST_FOUND');
-  if (!rep || !(SET.ai || (ME && ME.role === 'ADMIN'))) return '';
+  if (!rep || !SET.ai) return '';
   return '<button class="btn small" id="aiBtn" title="Ask the AI assistant"><span>&#129302;</span> Ask AI</button>';
 }
 function navPages() { var p = navPages0(); if (SET && SET.ai && has('REPORTS', 'HR_REPORTS', 'SHOP_REPORTS', 'SHOP_COSTS', 'RENT_REPORTS', 'FOOD_STORE', 'MAINT', 'INVENTORY', 'PURCHASE_APPROVE', 'LOST_FOUND')) { var i = p.map(function (x) { return x[0]; }).indexOf('admin'); p.splice(i < 0 ? p.length : i, 0, ['ask', 'Ask AI']); } return p; }
@@ -1659,8 +1659,8 @@ async function staffDocsModal(s) {
 /** Ask the assistant: plain questions, answered from the reports this person may already read. It cannot change anything. */
 PAGES.ask = async function (el) {
   SUB.askH = SUB.askH || [];
-  var tips = IS_SHOP() ? ['How much did we sell this week?', 'Which products are almost out of stock?', 'Who owes us money?'] : IS_RENTAL() ? ['How much rent did we collect this month?', 'Which tenants are late?', 'Which units are empty?'] : ['How much money did we earn this month?', 'How was occupancy last week?', 'Which guests still owe money?', 'What did the restaurant sell yesterday?'];
-  el.innerHTML = '<h2>Ask AI</h2><p class="hint">Ask in plain words, in English or Kinyarwanda. The assistant only reads your reports and cannot change anything. Your question and the figures needed to answer it are sent to the AI service (Anthropic). Check important numbers in Reports.</p><div class="bar" id="askTips"></div><div id="askLog" class="card" style="min-height:140px"></div><div class="bar"><input id="askQ" style="flex:1;min-width:220px" maxlength="600" placeholder="Type your question..."><button class="btn primary" id="askGo">Ask</button><button class="btn" id="askClr">New chat</button></div>';
+  var tips = IS_SHOP() ? ['How much did we sell this week?', 'Which products are almost out of stock?', 'Who owes us money?'] : IS_RENTAL() ? ['How much rent did we collect this month?', 'Which tenants are late?', 'Which units are empty?'] : ['How much money did we earn this month?', 'How was occupancy last week?', 'Which guests still owe money?', 'How many chairs do we have?', 'What did the restaurant sell yesterday?'];
+  el.innerHTML = '<h2>Ask AI</h2><p class="hint">Ask in plain words, in English or Kinyarwanda. The local assistant only reads the reports you are allowed to see and cannot change anything. No question or report data is sent to an AI provider. Check important numbers in Reports.</p><div class="bar" id="askTips"></div><div id="askLog" class="card" style="min-height:140px"></div><div class="bar"><input id="askQ" style="flex:1;min-width:220px" maxlength="600" placeholder="Type your question..."><button class="btn primary" id="askGo">Ask</button><button class="btn" id="askClr">New chat</button></div>';
   var log = $('#askLog', el), q = $('#askQ', el), fmt = function (t) { return esc(t).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/\n/g, '<br>'); };
   var paint = function () { log.innerHTML = SUB.askH.length ? SUB.askH.map(function (m) { return m.role === 'user' ? '<p style="text-align:right"><span style="background:var(--navy2);color:#fff;border-radius:12px;padding:6px 12px;display:inline-block;max-width:85%;text-align:left">' + esc(m.text) + '</span></p>' : '<p><span style="background:var(--line);border-radius:12px;padding:6px 12px;display:inline-block;max-width:92%">' + fmt(m.text) + '</span>' + (m.used && m.used.length ? '<br><small class="hint">Based on: ' + esc(m.used.join('; ')) + '</small>' : '') + '</p>'; }).join('') : '<p class="hint">No questions yet. Try one of the examples above.</p>'; log.scrollTop = log.scrollHeight; };
   $('#askTips', el).innerHTML = tips.map(function (t, i) { return '<button class="btn small" data-i="' + i + '">' + esc(t) + '</button>'; }).join('');
