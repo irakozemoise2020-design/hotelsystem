@@ -180,7 +180,7 @@
  "Arrival weekday": "Umunsi wo kuhagera",
  "Arrivals": "Abahageze",
  "Arrivals and departures": "Abahageze n'abagiye",
- "Arrivals waiting": "Abahageze bategereje",
+ "Arrivals waiting": "Abategereje Kwakirwa",
  "Arrive": "Kuhagera",
  "Arrived": "Byageze",
  "Arriving today": "Bahagera uyu munsi",
@@ -596,7 +596,7 @@
  "Departs/left": "Yagenda/yagiye",
  "Departure": "Kugenda",
  "Departures": "Abagiye",
- "Departures due": "Abagomba kugenda",
+ "Departures due": "Abagiye Kugenda",
  "Deposit": "Ingwate",
  "Deposit paid now (if any)": "Ingwate yatanzwe ubu (niba ihari)",
  "Deposit used": "Ingwate yakoreshejwe",
@@ -834,7 +834,7 @@
  "Guests by nationality (period)": "Abashyitsi hakurikijwe ubwenegihugu (igihe)",
  "Guests in period": "Abashyitsi muri iki gihe",
  "Guests in room": "Abashyitsi mu cyumba",
- "Guests in the hotel": "Abashyitsi bari muri hoteli",
+ "Guests in the hotel": "Abashyitsi Dufite",
  "Guests staying in period": "Abashyitsi bacumbitse muri iki gihe",
  "Guests with no ID number or document (fix before the police / immigration check)": "Abashyitsi badafite nomero y'indangamuntu cyangwa icyangombwa (bikosore mbere y'igenzura rya polisi / abinjira n'abasohoka)",
  "Guests with no phone number": "Abashyitsi badafite nomero ya telefoni",
@@ -1311,7 +1311,7 @@
  "OK": "Ni byiza",
  "OPEN": "BIRAFUNGUYE",
  "OUT OF ORDER": "NTIGIKORA",
- "Occupancy": "Ibyumba birimo abantu",
+ "Occupancy": "Ibyumba Birimo abantu",
  "Occupancy %": "Ibyumba birimo abantu %",
  "Occupancy % per day": "Ibyumba birimo abantu % ku munsi",
  "Occupancy forecast (next 30 days)": "Iteganya ry'ibyumba birimo abantu (iminsi 30 iri imbere)",
@@ -1354,7 +1354,7 @@
  "Open handover notes (oldest first)": "Inyandiko zifunguye zo guhanahana akazi (iza kera mbere)",
  "Open now": "Bifunguye ubu",
  "Open records": "Inyandiko zifunguye",
- "Open repairs": "Ibikorwa byo gusana bifunguye",
+ "Open repairs": "Imirimo yo gusana",
  "Open repairs now": "Ibikorwa byo gusana bifunguye ubu",
  "Open tasks now": "Imirimo ifunguye ubu",
  "Open tasks now (oldest first)": "Imirimo ifunguye ubu (iya kera mbere)",
@@ -1635,6 +1635,7 @@
  "Restore this backup?": "Subiza iyi kopi?",
  "Restore...": "Subiza...",
  "Restored {} records. Please sign in again.": "Ibyanditswe {} byasubijwe. Ongera winjire.",
+ "Restoring - please wait, this can take a minute. Do not close this page.": "Birimo gusubiza amakuru - tegereza, bishobora gufata umunota. Ntufunge uru rupapuro.",
  "Result": "Ibyavuyemo",
  "Retire": "Kura mu rutonde",
  "Retire this equipment? Its planned jobs stop.": "Kuraho ibi bikoresho? Imirimo yateganyijwe izahagarara.",
@@ -1683,7 +1684,7 @@
  "Rooms in the hotel": "Ibyumba bya hoteli",
  "Rooms never used": "Ibyumba bitakoreshejwe",
  "Rooms occupied": "Ibyumba birimo abantu",
- "Rooms to clean": "Ibyumba bigomba gusukurwa",
+ "Rooms to clean": "Ibyumba bisa nabi",
  "Rooms with most problems": "Ibyumba bifite ibibazo byinshi",
  "Rooms with most repairs": "Ibyumba bifite ibyo gusana byinshi",
  "Rooms with no stay in this period": "Ibyumba nta mushyitsi bagize muri iki gihe",
@@ -2134,7 +2135,7 @@
  "Unpaid (in hotel)": "Ntibyishyuwe (muri hoteli)",
  "Unpaid balances": "Asigaye atishyuwe",
  "Unpaid bills": "Fagitire zitishyuwe",
- "Unpaid bills (in house)": "Fagitire zitishyuwe (abari muri hoteli)",
+ "Unpaid bills (in house)": "Atarishyurwa",
  "Unpaid bills (stays still owing)": "Fagitire zitishyuwe (abacumbitse bagifite umwenda)",
  "Unpaid purchases": "Ibyaguzwe bitishyuwe",
  "Unpaid right now": "Ntibyishyuwe ubu",
@@ -2427,7 +2428,7 @@
   }
   function setLang(v) { try { localStorage.setItem(STORAGE_KEY, v); } catch (e) {} global.location.reload(); }
   function inline() {
-    var spots = document.querySelectorAll('.login, header > div:last-child');
+    var spots = document.querySelectorAll('.login');
     for (var i = 0; i < spots.length; i++) {
       var h = spots[i]; if (h.querySelector('.hotel-lang-inline')) continue;
       var w = document.createElement('span'); w.className = 'hotel-lang-inline'; w.setAttribute('data-i18n-ignore', ''); w.style.cssText = 'display:inline-block;margin:6px 0 0 8px;font-size:13px';

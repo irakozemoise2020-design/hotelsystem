@@ -140,7 +140,8 @@ function showBlocked(r) {
   b.querySelector('p').textContent = r.error; document.body.appendChild(b); document.getElementById('blockedGo').onclick = function () { location.reload(); };
 }
 function server(fn, args) {
-  var ctl = new AbortController(), tm = setTimeout(function () { ctl.abort(); }, 30000);
+  var LONG = { restoreData: 1, backupData: 1, backupPeek: 1 }, slow = (fn === 'api' && args && LONG[args[1]]) || (fn === 'apiBatch' && args && (args[1] || []).some(function (c) { return LONG[c[0]]; }));
+  var ctl = new AbortController(), tm = setTimeout(function () { ctl.abort(); }, slow ? 300000 : 30000);
   return fetch(window.HOTEL_API, { method: 'POST', headers: window.HOTEL_REGION ? { 'Content-Type': 'text/plain', 'x-region': window.HOTEL_REGION } : { 'Content-Type': 'text/plain' }, body: JSON.stringify({ fn: fn, args: args, t: bizCode(), h: location.hostname }), signal: ctl.signal })
     .then(function (r) { clearTimeout(tm); return r.json(); })
     .then(function (r) { if (r && r.blocked) showBlocked(r); else if (r && r.sub) showBanner(r.sub); return r; })
@@ -1924,7 +1925,7 @@ async function adminSettings(el, body) {
         var pw = mm.querySelector('#rspw').value, w = mm.querySelector('#rsw').value.trim();
         if (!pw) { toast('Write your password.', true); return false; } if (w !== 'RESTORE') { toast('Type the word RESTORE in capital letters.', true); return false; }
         var cur = await call('backupData'); dlJson('hotel-backup-before-restore-' + TODAY + '.json', cur);
-        var r = await call('restoreData', data, 'RESTORE', pw); toast('Restored ' + r.rows + ' records. Please sign in again.'); setTimeout(function () { signOut(); }, 1500);
+        toast('Restoring - please wait, this can take a minute. Do not close this page.'); var r = await call('restoreData', data, 'RESTORE', pw); toast('Restored ' + r.rows + ' records. Please sign in again.'); setTimeout(function () { signOut(); }, 1500);
       }, 'danger']], true);
   };
 }
