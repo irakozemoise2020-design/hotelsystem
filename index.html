@@ -103,6 +103,7 @@ tr.sel td{background:var(--line)}
 <div id="app"></div>
 <div id="toast"></div>
 <div id="printArea"></div>
+<script src="i18n.js"></script>
 <script>var BOOT = { needsSetup: false };</script>
 <script>
 var TOKEN = null, ME = null, RIGHTS = [], SET = { hotel_name: 'Hotel', currency: 'RWF' }, PAGE = '', SUB = {};
@@ -1904,7 +1905,7 @@ async function adminAudit(el, body) {
 }
 
 async function adminSettings(el, body) {
-  body.innerHTML = '<div class="card"><h3>' + (IS_SHOP() ? 'Shop' : IS_RENTAL() ? 'Rental business' : 'Hotel') + '</h3><div class="f" style="max-width:480px"><label>' + (IS_SHOP() || IS_RENTAL() ? 'Business name' : 'Hotel name') + '</label><input id="hn" value="' + esc(SET.hotel_name) + '"><label>Currency</label><input id="cu" value="' + esc(SET.currency) + '"></div><p><button class="btn primary" id="sv">Save</button></p></div><div class="card"><h3>Download a backup file</h3><p class="hint">Saves all hotel data (guests, bookings, bills, staff, settings...) as one file on this device. Keep it somewhere safe, for example once a week. Guest document photos and chat attachments are not inside this file.</p><button class="btn primary" id="dl">Download backup</button></div>';
+  body.innerHTML = '<div class="card"><h3>' + (IS_SHOP() ? 'Shop' : IS_RENTAL() ? 'Rental business' : 'Hotel') + '</h3><div class="f" style="max-width:480px"><label>' + (IS_SHOP() || IS_RENTAL() ? 'Business name' : 'Hotel name') + '</label><input id="hn" value="' + esc(SET.hotel_name) + '"><label>Currency</label><input id="cu" value="' + esc(SET.currency) + '"></div><p><button class="btn primary" id="sv">Save</button></p></div><div class="card"><h3>Download a backup file</h3><p class="hint">Saves all hotel data (guests, bookings, bills, staff, settings...) as one file on this device. Keep it somewhere safe, for example once a week. Guest document photos and chat attachments are not inside this file.</p><button class="btn primary" id="dl">Download backup</button></div>' + (ME.role === 'ADMIN' ? '<div class="card"><h3>Restore from a backup file</h3><p class="hint">Puts the whole system back to what a downloaded backup file contained. Everything entered after that backup was made is removed. Only an administrator can do this. Your current data is saved to a safety file on this device first. Guest document photos and chat attachments are not part of a backup file, so they stay as they are.</p><input type="file" id="rsf" accept=".json,application/json"> <button class="btn danger" id="rs">Restore...</button></div>' : '');
   if (IS_SHOP()) {
     var shs = await call('shopSettings');
     body.insertAdjacentHTML('afterbegin', '<div class="card"><h3>Selling</h3><label><input type="checkbox" id="neg"' + (shs.allow_negative ? ' checked' : '') + '> Allow selling a product even when the system shows none in stock</label><div class="f" style="max-width:480px"><label>Usual markup % over cost</label><input id="dmk" type="number" min="0" value="' + (shs.default_markup || '') + '"></div><p class="hint">The usual markup is suggested when you add products or record purchases, to work out selling prices. Leave the box above off to stop sales of items that are not in stock. Turn it on only if you do not keep your stock up to date.</p><p><button class="btn primary" id="svn">Save</button></p></div>');
@@ -1912,6 +1913,20 @@ async function adminSettings(el, body) {
   }
   $('#sv', body).onclick = function () { act(call('saveSettings', { hotel_name: $('#hn', body).value, currency: $('#cu', body).value }).then(async function () { SET = await call('settings'); toast('Saved.'); draw(); })); };
   $('#dl', body).onclick = function () { act(call('backupData').then(function (d) { var blob = new Blob([JSON.stringify(d)], { type: 'application/json' }), a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'hotel-backup-' + TODAY + '.json'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(a.href); }, 5000); toast('Backup file downloaded.'); })); };
+  var dlJson = function (name, obj) { var blob = new Blob([JSON.stringify(obj)], { type: 'application/json' }), a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(a.href); }, 5000); };
+  if ($('#rs', body)) $('#rs', body).onclick = async function () {
+    var f = $('#rsf', body).files[0]; if (!f) { toast('Choose the backup file first.', true); return; }
+    if (f.size > 5000000) { toast('This file is over 5 MB, too big to restore from here. Ask your provider to restore it from the database.', true); return; }
+    var data, pk; try { data = JSON.parse(await f.text()); } catch (e) { toast('This is not a backup file: it cannot be read.', true); return; }
+    try { pk = await call('backupPeek', data); } catch (e) { return; }
+    modal('Restore this backup?', '<p>Backup made on <b>' + esc(pk.made_at || 'an unknown date') + '</b>' + (pk.by ? ' by ' + esc(pk.by) : '') + '. It holds ' + pk.counts.Guests + ' guests, ' + pk.counts.Bookings + ' bookings, ' + pk.counts.Payments + ' payments and ' + pk.counts.Users + ' users.</p><p><b style="color:#dc2626">Everything entered after that date will be lost</b>, including users and password changes. You will be signed out and must sign in with the passwords of that time.</p><div class="f"><label for="rspw">Your password</label><div><input type="password" id="rspw" autocomplete="current-password"></div><label for="rsw">Type RESTORE to confirm</label><div><input id="rsw" autocomplete="off"></div></div><p class="hint">A safety copy of the current data will be downloaded first.</p>',
+      [['Cancel'], ['Restore now', async function (mm) {
+        var pw = mm.querySelector('#rspw').value, w = mm.querySelector('#rsw').value.trim();
+        if (!pw) { toast('Write your password.', true); return false; } if (w !== 'RESTORE') { toast('Type the word RESTORE in capital letters.', true); return false; }
+        var cur = await call('backupData'); dlJson('hotel-backup-before-restore-' + TODAY + '.json', cur);
+        var r = await call('restoreData', data, 'RESTORE', pw); toast('Restored ' + r.rows + ' records. Please sign in again.'); setTimeout(function () { signOut(); }, 1500);
+      }, 'danger']], true);
+  };
 }
 
 // ====================================================================
