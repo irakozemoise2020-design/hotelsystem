@@ -1976,6 +1976,7 @@
  "That unit is switched off.": "Iyo nzu yahagaritswe.",
  "That user does not exist.": "Uwo ukoresha ntabaho.",
  "That username is taken.": "Iryo zina ry'ukoresha ryamaze gufatwa.",
+ "The AI assistant is not switched on yet. The AI key must be added to the server (see SETUP_STAGE29.txt).": "Umufasha wa AI ntarakorwa. Urufunguzo rwa AI rugomba kongerwa kuri seriveri (reba SETUP_STAGE29.txt).",
  "The amount cannot be zero.": "Amafaranga ntashobora kuba zeru.",
  "The amount must be above zero.": "Amafaranga agomba kuba arenga zeru.",
  "The amount must be more than zero.": "Amafaranga agomba kuba arenze zeru.",

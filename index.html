@@ -242,11 +242,12 @@ function draw() {
   if (!TOKEN) return drawLogin(app);
   var pages = navPages();
   if (!PAGE || !(pages.some(function (p) { return p[0] === PAGE; }) || (PAGE === 'messages' && has('MESSAGES')))) PAGE = pages.length ? pages[0][0] : 'dashboard';
-  app.innerHTML = '<div class="shell"><header><div><h1>' + esc(SET.hotel_name) + '</h1><small>' + esc(TODAY) + '</small></div><div><span>' + esc(ME.name) + ' (' + esc(ME.role.toLowerCase()) + ')</span> ' + (has('MESSAGES') ? '<button class="btn small" id="chatBtn" title="Messages between departments">&#128172; Messages <span id="chatDot"></span></button>' : '') + ' <button class="btn small" id="pw">Password</button> <button class="btn small" id="out">Sign out</button></div></header><div class="main"><nav id="nav"></nav><div class="page" id="page"></div></div></div>';
+  app.innerHTML = '<div class="shell"><header><div><h1>' + esc(SET.hotel_name) + '</h1><small>' + esc(TODAY) + '</small></div><div><span>' + esc(ME.name) + ' (' + esc(ME.role.toLowerCase()) + ')</span> ' + (has('MESSAGES') ? '<button class="btn small" id="chatBtn" title="Messages between departments">&#128172; Messages <span id="chatDot"></span></button>' : '') + aiButton() + ' <button class="btn small" id="pw">Password</button> <button class="btn small" id="out">Sign out</button></div></header><div class="main"><nav id="nav"></nav><div class="page" id="page"></div></div></div>';
   $('#nav').innerHTML = pages.map(function (p) { return '<button data-p="' + p[0] + '" class="' + (p[0] === PAGE ? 'on' : '') + '">' + p[1] + '</button>'; }).join('');
   $('#nav').onclick = function (e) { var b = e.target.closest('button'); if (b) { PAGE = b.dataset.p; draw(); } };
   $('#out').onclick = function () { signOut(); };
   $('#pw').onclick = changePassword;
+  if ($('#aiBtn')) $('#aiBtn').onclick = function () { if (!SET.ai) { toast('The AI assistant is not switched on yet. The AI key must be added to the server (see SETUP_STAGE29.txt).', true); return; } PAGE = 'ask'; draw(); };
   if ($('#chatBtn')) $('#chatBtn').onclick = function () { PAGE = 'messages'; draw(); };
   if (!pages.length) {
     $('#page').innerHTML = '<h2>No access yet</h2><p class="hint">Ask an administrator to tick your screens in Admin &rarr; Access Control.</p>';
@@ -290,6 +291,12 @@ function refreshChatBadge(soon) {
     var b = $('#nav button[data-p="handover"]'); if (b) { b.textContent = 'Handover' + (r.open ? ' (' + r.open + ')' : ''); b.style.fontWeight = r.important ? '700' : ''; }
   }).catch(function () {});
   again();
+}
+/** The robot button in the top bar: opens the assistant. Shown to people who can read reports; an administrator also sees it when the assistant is not switched on yet, with an explanation. */
+function aiButton() {
+  var rep = has('REPORTS', 'HR_REPORTS', 'SHOP_REPORTS', 'SHOP_COSTS', 'RENT_REPORTS', 'FOOD_STORE', 'MAINT', 'INVENTORY', 'PURCHASE_APPROVE', 'LOST_FOUND');
+  if (!rep || !(SET.ai || (ME && ME.role === 'ADMIN'))) return '';
+  return '<button class="btn small" id="aiBtn" title="Ask the AI assistant"><span>&#129302;</span> Ask AI</button>';
 }
 function navPages() { var p = navPages0(); if (SET && SET.ai && has('REPORTS', 'HR_REPORTS', 'SHOP_REPORTS', 'SHOP_COSTS', 'RENT_REPORTS', 'FOOD_STORE', 'MAINT', 'INVENTORY', 'PURCHASE_APPROVE', 'LOST_FOUND')) { var i = p.map(function (x) { return x[0]; }).indexOf('admin'); p.splice(i < 0 ? p.length : i, 0, ['ask', 'Ask AI']); } return p; }
 function navPages0() {
