@@ -292,13 +292,13 @@ function refreshChatBadge(soon) {
   }).catch(function () {});
   again();
 }
-/** The robot button opens the local data assistant for people who can read reports. */
+/** The robot button in the top bar: opens the assistant. Shown to people who can read reports; an administrator also sees it when the assistant is not switched on yet, with an explanation. */
 function aiButton() {
   var rep = has('REPORTS', 'HR_REPORTS', 'SHOP_REPORTS', 'SHOP_COSTS', 'RENT_REPORTS', 'FOOD_STORE', 'MAINT', 'INVENTORY', 'PURCHASE_APPROVE', 'LOST_FOUND');
-  if (!rep || !SET.ai) return '';
-  return '<button class="btn small" id="aiBtn" title="Ask the AI assistant"><span>&#129302;</span> Ask AI</button>';
+  if (!rep) return '';
+  return '<button class="btn small" id="aiBtn" title="Ask a question about your business"><span>&#129302;</span> Ask AI</button>';
 }
-function navPages() { var p = navPages0(); if (SET && SET.ai && has('REPORTS', 'HR_REPORTS', 'SHOP_REPORTS', 'SHOP_COSTS', 'RENT_REPORTS', 'FOOD_STORE', 'MAINT', 'INVENTORY', 'PURCHASE_APPROVE', 'LOST_FOUND')) { var i = p.map(function (x) { return x[0]; }).indexOf('admin'); p.splice(i < 0 ? p.length : i, 0, ['ask', 'Ask AI']); } return p; }
+function navPages() { var p = navPages0(); if (SET && has('REPORTS', 'HR_REPORTS', 'SHOP_REPORTS', 'SHOP_COSTS', 'RENT_REPORTS', 'FOOD_STORE', 'MAINT', 'INVENTORY', 'PURCHASE_APPROVE', 'LOST_FOUND')) { var i = p.map(function (x) { return x[0]; }).indexOf('admin'); p.splice(i < 0 ? p.length : i, 0, ['ask', 'Ask AI']); } return p; }
 function navPages0() {
   if (IS_SHOP()) return shopNav();
   if (IS_RENTAL()) return rentalNav();
@@ -1656,27 +1656,60 @@ async function staffDocsModal(s) {
 // ====================================================================
 // MESSAGES PAGE (Chat)
 // ====================================================================
-/** Ask the assistant: plain questions, answered from the reports this person may already read. It cannot change anything. */
+/** Ask the assistant: plain questions in English or Kinyarwanda, answered from the reports this person may already open. It reads only. Works without any AI service; if one is set up on the server it is used only for questions the built-in assistant does not understand. */
 PAGES.ask = async function (el) {
   SUB.askH = SUB.askH || [];
-  var tips = IS_SHOP() ? ['How much did we sell this week?', 'Which products are almost out of stock?', 'Who owes us money?'] : IS_RENTAL() ? ['How much rent did we collect this month?', 'Which tenants are late?', 'Which units are empty?'] : ['How much money did we earn this month?', 'How was occupancy last week?', 'Which guests still owe money?', 'How many chairs do we have?', 'What did the restaurant sell yesterday?'];
-  el.innerHTML = '<h2>Ask AI</h2><p class="hint">Ask in plain words, in English or Kinyarwanda. The local assistant only reads the reports you are allowed to see and cannot change anything. No question or report data is sent to an AI provider. Check important numbers in Reports.</p><div class="bar" id="askTips"></div><div id="askLog" class="card" style="min-height:140px"></div><div class="bar"><input id="askQ" style="flex:1;min-width:220px" maxlength="600" placeholder="Type your question..."><button class="btn primary" id="askGo">Ask</button><button class="btn" id="askClr">New chat</button></div>';
+  var rw = false; try { rw = localStorage.getItem('hotel_ui_language') === 'rw'; } catch (e) { }
+  var tips = IS_SHOP() ? [['How much did we sell this week?', 'Twagurishije amafaranga angahe muri iki cyumweru?'], ['Which items are running low?', 'Ni ibihe bintu bigiye gushira?'], ['Who owes us money?', 'Ni nde utugomba amafaranga?'], ['What is our profit this year?', 'Inyungu yacu niingahe uyu mwaka?']]
+    : IS_RENTAL() ? [['How much rent did we collect this month?', 'Twakusanyije ubukode bungana iki uku kwezi?'], ['Which tenants are late?', 'Ni abahe bakodesha batinze kwishyura?'], ['Which units are empty?', 'Ni izihe nzu zirimo ubusa?'], ['Which leases end soon?', 'Ni ayahe masezerano y\'ubukode agiye kurangira?']]
+    : [['How much money did we earn this month?', 'Twinjije amafaranga angahe uku kwezi?'], ['How was occupancy last week?', 'Ibyumba byari birimo abantu bingana iki icyumweru gishize?'], ['Who owes us money?', 'Ni nde utugomba amafaranga?'], ['Who is arriving and leaving today?', 'Ni bande bahagera kandi bagenda uyu munsi?']];
+  el.innerHTML = '<h2>Ask AI</h2><p class="hint">Ask in plain words, in English or Kinyarwanda. The answer comes from your reports, with the numbers the system holds. It cannot change anything. Say the period if you want one: today, yesterday, last week, this month, last month, in March, or two dates.</p><div class="bar" id="askTips"></div><div id="askLog" class="card" style="min-height:140px"></div><div class="bar"><input id="askQ" style="flex:1;min-width:220px" maxlength="300" placeholder="Type your question..."><button class="btn primary" id="askGo">Ask</button><button class="btn" id="askClr">New chat</button></div>';
   var log = $('#askLog', el), q = $('#askQ', el), fmt = function (t) { return esc(t).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/\n/g, '<br>'); };
-  var paint = function () { log.innerHTML = SUB.askH.length ? SUB.askH.map(function (m) { return m.role === 'user' ? '<p style="text-align:right"><span style="background:var(--navy2);color:#fff;border-radius:12px;padding:6px 12px;display:inline-block;max-width:85%;text-align:left">' + esc(m.text) + '</span></p>' : '<p><span style="background:var(--line);border-radius:12px;padding:6px 12px;display:inline-block;max-width:92%">' + fmt(m.text) + '</span>' + (m.used && m.used.length ? '<br><small class="hint">Based on: ' + esc(m.used.join('; ')) + '</small>' : '') + '</p>'; }).join('') : '<p class="hint">No questions yet. Try one of the examples above.</p>'; log.scrollTop = log.scrollHeight; };
-  $('#askTips', el).innerHTML = tips.map(function (t, i) { return '<button class="btn small" data-i="' + i + '">' + esc(t) + '</button>'; }).join('');
+  var chip = function (p) { return '<button class="btn small" data-q="' + esc(rw ? p[1] : p[0]) + '">' + esc(rw ? p[1] : p[0]) + '</button>'; };
+  var card = function (d) {
+    var h = '<div class="card" style="margin:4px 0;max-width:100%"><small class="hint"><span>' + esc(d.title) + '</span> &middot; <span>' + esc(d.period) + '</span></small>';
+    if (d.big) h += '<div style="font-size:1.7em;font-weight:700;margin:2px 0">' + esc(d.big.v) + '</div><div>' + esc(d.big.l) + '</div>';
+    if (d.kpis && d.kpis.length) h += '<div class="grid" style="margin-top:8px">' + d.kpis.map(function (k) { return '<div class="card"><small class="hint">' + esc(k.l) + '</small><div style="font-weight:600">' + esc(k.v) + '</div></div>'; }).join('') + '</div>';
+    if (d.table && d.table.rows.length) h += '<p style="margin:10px 0 2px"><b>' + esc(d.table.title) + '</b></p><div style="overflow:auto"><table><thead><tr>' + d.table.cols.map(function (c) { return '<th' + (c.n ? ' style="text-align:right"' : '') + '>' + esc(c.h) + '</th>'; }).join('') + '</tr></thead><tbody>' + d.table.rows.map(function (r) { return '<tr>' + r.map(function (v, i) { return '<td' + (d.table.cols[i].n ? ' style="text-align:right"' : '') + '>' + esc(v) + '</td>'; }).join('') + '</tr>'; }).join('') + '</tbody></table></div>' + (d.table.more ? '<small class="hint">+ ' + d.table.more + ' more in the full report</small>' : '');
+    if (d.defaulted) h += '<p class="hint" style="margin:8px 0 0">Period not stated, so this shows ' + esc(d.period.split(' (')[0]) + '. Add words like "last week" or "in March" to change it.</p>';
+    h += '<div class="bar" style="margin-top:8px"><button class="btn small" data-open="' + esc(d.key) + '" data-from="' + esc(d.from) + '" data-to="' + esc(d.to) + '">Open the full report</button></div>';
+    if (d.also && d.also.length) h += '<div class="bar"><small class="hint">You may also want:</small>' + d.also.map(function (a) { return chip([a.en, a.rw]); }).join('') + '</div>';
+    return h + '</div>';
+  };
+  var paint = function () {
+    log.innerHTML = SUB.askH.length ? SUB.askH.map(function (m) {
+      if (m.role === 'user') return '<p style="text-align:right"><span style="background:var(--navy2);color:#fff;border-radius:12px;padding:6px 12px;display:inline-block;max-width:85%;text-align:left">' + esc(m.text) + '</span></p>';
+      if (m.card) return card(m.card);
+      if (m.hints) return '<p><span style="background:var(--line);border-radius:12px;padding:6px 12px;display:inline-block">' + (m.notfound ? esc('I could not find an item called "' + m.notfound + '" in your stock lists. Check the spelling or try another word. You can also try:') : 'I did not understand that. Try one of these questions:') + '</span></p><div class="bar">' + m.hints.map(function (a) { return chip([a.en, a.rw]); }).join('') + '</div>';
+      return '<p><span style="background:var(--line);border-radius:12px;padding:6px 12px;display:inline-block;max-width:92%">' + fmt(m.text) + '</span>' + (m.used && m.used.length ? '<br><small class="hint">Based on: ' + esc(m.used.join('; ')) + '</small>' : '') + '</p>';
+    }).join('') : '<p class="hint">No questions yet. Try one of the examples above.</p>';
+    log.scrollTop = log.scrollHeight;
+  };
+  $('#askTips', el).innerHTML = tips.map(chip).join('');
   var send = async function (text) {
-    text = String(text || '').trim(); if (!text || SUB.askBusy) return; SUB.askBusy = 1; q.value = ''; var hist = SUB.askH.map(function (m) { return { role: m.role, text: m.text }; });
+    text = String(text || '').trim(); if (!text || SUB.askBusy) return; SUB.askBusy = 1; q.value = '';
     SUB.askH.push({ role: 'user', text: text }); paint(); log.insertAdjacentHTML('beforeend', '<p class="hint" id="askWait">Thinking...</p>'); $('#askGo', el).disabled = true;
     try {
-      var r = await server('api', [TOKEN, 'askAi', [text, hist]]);
+      var r = await rawCall('assistAsk', [text]);
       if (r && r.data && r.data.expired) { signOut(true); return; }
-      if (!r.ok) { SUB.askH.push({ role: 'assistant', text: r.error }); } else SUB.askH.push({ role: 'assistant', text: r.data.answer, used: r.data.used });
-    } catch (e) { SUB.askH.push({ role: 'assistant', text: e.message || 'Connection problem. Check the internet and try again.' }); }
+      if (!r.ok) SUB.askH.push({ role: 'bot', text: r.error });
+      else if (r.data.unknown && SET.ai) {
+        var hist = SUB.askH.filter(function (m) { return m.text && !m.card && !m.hints; }).slice(0, -1).map(function (m) { return { role: m.role === 'user' ? 'user' : 'assistant', text: m.text }; });
+        var a = await server('api', [TOKEN, 'askAi', [text, hist]]);
+        if (a && a.data && a.data.expired) { signOut(true); return; }
+        if (a.ok) SUB.askH.push({ role: 'bot', text: a.data.answer, used: a.data.used }); else SUB.askH.push({ role: 'bot', hints: r.data.hints, notfound: r.data.notfound });
+      } else if (r.data.unknown) SUB.askH.push({ role: 'bot', hints: r.data.hints, notfound: r.data.notfound });
+      else SUB.askH.push({ role: 'bot', card: r.data });
+    } catch (e) { SUB.askH.push({ role: 'bot', text: e.message || 'Connection problem. Check the internet and try again.' }); }
     SUB.askBusy = 0; $('#askGo', el).disabled = false; paint(); q.focus();
   };
   $('#askGo', el).onclick = function () { send(q.value); }; q.onkeydown = function (e) { if (e.key === 'Enter') send(q.value); };
   $('#askClr', el).onclick = function () { SUB.askH = []; paint(); };
-  $('#askTips', el).onclick = function (e) { var b = e.target.closest('button'); if (b) send(tips[+b.dataset.i]); };
+  el.onclick = function (e) {
+    var b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.q) send(b.dataset.q);
+    else if (b.dataset.open) { SUB.rp = { from: b.dataset.from, to: b.dataset.to, rep: b.dataset.open }; PAGE = 'reports'; draw(); }
+  };
   paint();
 };
 
