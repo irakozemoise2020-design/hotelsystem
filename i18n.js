@@ -2365,7 +2365,8 @@
  "{} items": "Ibintu {}",
  "{} of {} items match": "{} muri {} birahuye",
  "· Extra": "· Ibyisumbuye",
- "· IMPORTANT": "· NI NGOMBWA"
+ "· IMPORTANT": "· NI NGOMBWA",
+ "💬 Messages": "Ubutumwa"
 };
   var exact = {}, lower = {}, templates = [];
   Object.keys(rw).forEach(function (k) {
@@ -2424,10 +2425,21 @@
     var select = document.getElementById('hotel-language-select'); select.value = language;
     select.onchange = function () { try { localStorage.setItem(STORAGE_KEY, select.value); } catch (e) {} global.location.reload(); };
   }
+  function setLang(v) { try { localStorage.setItem(STORAGE_KEY, v); } catch (e) {} global.location.reload(); }
+  function inline() {
+    var spots = document.querySelectorAll('.login, header > div:last-child');
+    for (var i = 0; i < spots.length; i++) {
+      var h = spots[i]; if (h.querySelector('.hotel-lang-inline')) continue;
+      var w = document.createElement('span'); w.className = 'hotel-lang-inline'; w.setAttribute('data-i18n-ignore', ''); w.style.cssText = 'display:inline-block;margin:6px 0 0 8px;font-size:13px';
+      w.innerHTML = '<select aria-label="Language" title="Language / Ururimi" style="padding:3px 5px;border-radius:5px;border:1px solid #9aa5b1;background:#fff;color:#14213d"><option value="en">English</option><option value="rw">Ikinyarwanda</option></select>';
+      var sel = w.firstChild; sel.value = language; sel.onchange = function () { setLang(this.value); };
+      h.appendChild(w);
+    }
+  }
   function start() {
-    picker(); queueTranslate();
+    picker(); inline(); queueTranslate();
     if (language === 'rw') { document.documentElement.lang = 'rw'; if (document.title) document.title = translateText(document.title); }
-    if (global.MutationObserver) (new MutationObserver(queueTranslate)).observe(document.body, { childList: true, subtree: true, characterData: true });
+    if (global.MutationObserver) (new MutationObserver(function () { inline(); queueTranslate(); })).observe(document.body, { childList: true, subtree: true, characterData: true });
   }
   global.HotelI18n = { language: function () { return language; }, translate: translateTree, text: translateText, size: Object.keys(rw).length };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
