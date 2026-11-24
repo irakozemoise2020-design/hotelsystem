@@ -97,6 +97,30 @@ tr.sel td{background:var(--line)}
 #chatDot{position:relative;top:-10px;left:-10px;background:#ef4444;color:#fff;border-radius:99px;padding:0 6px;font-size:11px;font-weight:600}
 @media print{body *{visibility:hidden}#printArea,#printArea *{visibility:visible}#printArea{display:block;position:absolute;left:0;top:0;width:100%;color:#000;background:#fff;padding:20px}}
 @media (max-width:720px){nav{width:100%;display:flex;overflow:auto;border-right:0;border-bottom:1px solid var(--line)}nav button{white-space:nowrap;width:auto}.main{flex-direction:column}.f{grid-template-columns:1fr}.member-form{grid-template-columns:1fr}.two-col{grid-template-columns:1fr}.chat-wrap{grid-template-columns:1fr;grid-template-rows:200px 1fr}}
+
+.gl-stage{position:relative;border-radius:22px;padding:18px;overflow:hidden;background:linear-gradient(135deg,#7dd3fc 0%,#a78bfa 48%,#f9a8d4 100%);isolation:isolate}
+.gl-stage:before,.gl-stage:after{content:"";position:absolute;width:240px;height:240px;border-radius:50%;filter:blur(40px);z-index:-1;opacity:.7;animation:glfloat 14s ease-in-out infinite alternate}
+.gl-stage:before{background:#2dd4bf;top:-60px;left:-40px}.gl-stage:after{background:#fbbf24;bottom:-70px;right:-30px;animation-delay:-6s}
+@keyframes glfloat{to{transform:translate(40px,30px) scale(1.15)}}
+.gl-stage h2,.gl-stage .hint{color:#0b1b3a}
+.gl-card,.gl-stage .card{background:rgba(255,255,255,.28);border:1px solid rgba(255,255,255,.55);box-shadow:0 8px 32px rgba(31,38,135,.18);-webkit-backdrop-filter:blur(16px) saturate(160%);backdrop-filter:blur(16px) saturate(160%);color:#0b1b3a}
+.gl-stage .card .card{background:rgba(255,255,255,.35)}
+.gl-stage .hint{color:#26365a}
+.gl-user,.gl-bot{display:inline-block;border-radius:16px;padding:7px 14px;-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,.6);color:#0b1b3a;animation:glpop .25s ease-out}
+.gl-user{background:rgba(27,79,138,.82);color:#fff;text-align:left;max-width:85%}
+.gl-bot{background:rgba(255,255,255,.55);max-width:92%}
+@keyframes glpop{from{opacity:0;transform:translateY(6px) scale(.97)}}
+.gl-stage .btn{background:rgba(255,255,255,.4);border:1px solid rgba(255,255,255,.7);color:#0b1b3a;-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
+.gl-stage .btn.primary{background:rgba(15,118,110,.9);color:#fff}
+.gl-stage input{background:rgba(255,255,255,.5);border:1px solid rgba(255,255,255,.8);color:#0b1b3a;border-radius:12px}
+.gl-stage table,.gl-stage th,.gl-stage td{color:#0b1b3a;background:transparent}
+.gl-hello{font-size:1.15em;font-weight:600;margin:0 0 4px;color:#0b1b3a}
+.gl-dots i{display:inline-block;width:7px;height:7px;margin:0 2px;border-radius:50%;background:#0b1b3a;animation:gldot 1s infinite}.gl-dots i:nth-child(2){animation-delay:.15s}.gl-dots i:nth-child(3){animation-delay:.3s}
+@keyframes gldot{50%{opacity:.2;transform:translateY(-4px)}}
+.gl-btn{background:linear-gradient(135deg,rgba(125,211,252,.35),rgba(167,139,250,.35));border:1px solid rgba(255,255,255,.55);color:inherit;-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);box-shadow:0 2px 12px rgba(99,102,241,.35)}
+header .gl-btn{color:#fff}
+@media (prefers-color-scheme:dark){.gl-stage{background:linear-gradient(135deg,#0f2a4a 0%,#2b1b5e 50%,#4a1d4f 100%)}.gl-stage h2,.gl-stage .hint,.gl-hello{color:#e8eefb}.gl-card,.gl-stage .card{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.18);color:#e8eefb}.gl-bot{background:rgba(255,255,255,.12);color:#e8eefb;border-color:rgba(255,255,255,.2)}.gl-user{background:rgba(20,150,140,.7);color:#fff}.gl-stage .btn{background:rgba(255,255,255,.1);color:#e8eefb;border-color:rgba(255,255,255,.22)}.gl-stage .btn.primary{background:rgba(45,212,191,.85);color:#042f2e}.gl-stage input{background:rgba(255,255,255,.1);color:#e8eefb;border-color:rgba(255,255,255,.25)}.gl-stage table,.gl-stage th,.gl-stage td{color:#e8eefb}.gl-dots i{background:#e8eefb}}
+@media (prefers-reduced-motion:reduce){.gl-stage:before,.gl-stage:after,.gl-user,.gl-bot,.gl-dots i{animation:none}}
 </style>
 </head>
 <body>
@@ -292,13 +316,12 @@ function refreshChatBadge(soon) {
   }).catch(function () {});
   again();
 }
-/** The robot button in the top bar: opens the assistant. Shown to people who can read reports; an administrator also sees it when the assistant is not switched on yet, with an explanation. */
+/** The robot button in the top bar: opens the assistant. Shown to people who hold the right "Ask AI assistant" (Admin > Access). */
 function aiButton() {
-  var rep = has('REPORTS', 'HR_REPORTS', 'SHOP_REPORTS', 'SHOP_COSTS', 'RENT_REPORTS', 'FOOD_STORE', 'MAINT', 'INVENTORY', 'PURCHASE_APPROVE', 'LOST_FOUND');
-  if (!rep) return '';
-  return '<button class="btn small" id="aiBtn" title="Ask a question about your business"><span>&#129302;</span> Ask AI</button>';
+  if (!has('ASK_AI')) return '';
+  return '<button class="btn small gl-btn" id="aiBtn" title="Ask a question about your business"><span>&#129302;</span> Ask AI</button>';
 }
-function navPages() { var p = navPages0(); if (SET && has('REPORTS', 'HR_REPORTS', 'SHOP_REPORTS', 'SHOP_COSTS', 'RENT_REPORTS', 'FOOD_STORE', 'MAINT', 'INVENTORY', 'PURCHASE_APPROVE', 'LOST_FOUND')) { var i = p.map(function (x) { return x[0]; }).indexOf('admin'); p.splice(i < 0 ? p.length : i, 0, ['ask', 'Ask AI']); } return p; }
+function navPages() { var p = navPages0(); if (SET && has('ASK_AI')) { var i = p.map(function (x) { return x[0]; }).indexOf('admin'); p.splice(i < 0 ? p.length : i, 0, ['ask', 'Ask AI']); } return p; }
 function navPages0() {
   if (IS_SHOP()) return shopNav();
   if (IS_RENTAL()) return rentalNav();
@@ -1687,7 +1710,7 @@ PAGES.ask = async function (el) {
   var tips = IS_SHOP() ? [['How much did we sell this week?', 'Twagurishije amafaranga angahe muri iki cyumweru?'], ['Which items are running low?', 'Ni ibihe bintu bigiye gushira?'], ['Who owes us money?', 'Ni nde utugomba amafaranga?'], ['What is our profit this year?', 'Inyungu yacu niingahe uyu mwaka?']]
     : IS_RENTAL() ? [['How much rent did we collect this month?', 'Twakusanyije ubukode bungana iki uku kwezi?'], ['Which tenants are late?', 'Ni abahe bakodesha batinze kwishyura?'], ['Which units are empty?', 'Ni izihe nzu zirimo ubusa?'], ['Which leases end soon?', 'Ni ayahe masezerano y\'ubukode agiye kurangira?']]
     : [['How much money did we earn this month?', 'Twinjije amafaranga angahe uku kwezi?'], ['How was occupancy last week?', 'Ibyumba byari birimo abantu bingana iki icyumweru gishize?'], ['Who owes us money?', 'Ni nde utugomba amafaranga?'], ['Who is arriving and leaving today?', 'Ni bande bahagera kandi bagenda uyu munsi?']];
-  el.innerHTML = '<h2>Ask AI</h2><p class="hint">Ask in plain words, in English or Kinyarwanda. The answer comes from your reports, with the numbers the system holds. It cannot change anything. Say the period if you want one: today, yesterday, last week, this month, last month, in March, or two dates.</p><div class="bar" id="askTips"></div><div class="bar" id="askAdmin"></div><div id="askLog" class="card" style="min-height:140px"></div><div class="bar"><input id="askQ" style="flex:1;min-width:220px" maxlength="300" placeholder="Type your question..."><button class="btn primary" id="askGo">Ask</button><button class="btn" id="askClr">New chat</button></div>';
+  el.innerHTML = '<div class="gl-stage"><h2><span>&#10024;</span> <span>Ask AI</span></h2><p class="gl-hello" id="askHi"></p><p class="hint">Ask in plain words, in English or Kinyarwanda. The answer comes from your reports, with the numbers the system holds. It cannot change anything. Say the period if you want one: today, yesterday, last week, this month, last month, in March, or two dates.</p><div class="bar" id="askTips"></div><div class="bar" id="askAdmin"></div><div id="askLog" class="card gl-card" style="min-height:140px"></div><div class="bar"><input id="askQ" style="flex:1;min-width:220px" maxlength="300" placeholder="Type your question..."><button class="btn primary" id="askGo">Ask</button><button class="btn" id="askClr">New chat</button></div></div>';
   var log = $('#askLog', el), q = $('#askQ', el), fmt = function (t) { return esc(t).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/\n/g, '<br>'); };
   var chip = function (p) { return '<button class="btn small" data-q="' + esc(rw ? p[1] : p[0]) + '">' + esc(rw ? p[1] : p[0]) + '</button>'; };
   var card = function (d) {
@@ -1702,13 +1725,14 @@ PAGES.ask = async function (el) {
   };
   var paint = function () {
     log.innerHTML = SUB.askH.length ? SUB.askH.map(function (m) {
-      if (m.role === 'user') return '<p style="text-align:right"><span style="background:var(--navy2);color:#fff;border-radius:12px;padding:6px 12px;display:inline-block;max-width:85%;text-align:left">' + esc(m.text) + '</span></p>';
+      if (m.role === 'user') return '<p style="text-align:right"><span class="gl-user">' + esc(m.text) + '</span></p>';
       if (m.card) return card(m.card);
-      if (m.hints) return '<p><span style="background:var(--line);border-radius:12px;padding:6px 12px;display:inline-block">' + (m.notfound ? esc('I could not find an item called "' + m.notfound + '" in your stock lists. Check the spelling or try another word. You can also try:') : 'I did not understand that. Try one of these questions:') + '</span></p><div class="bar">' + m.hints.map(function (a) { return chip([a.en, a.rw]); }).join('') + '</div>';
-      return '<p><span style="background:var(--line);border-radius:12px;padding:6px 12px;display:inline-block;max-width:92%">' + fmt(m.text) + '</span>' + (m.used && m.used.length ? '<br><small class="hint">Based on: ' + esc(m.used.join('; ')) + '</small>' : '') + '</p>';
+      if (m.hints) return '<p><span class="gl-bot">' + (m.notfound ? esc('I could not find an item called "' + m.notfound + '" in your stock lists. Check the spelling or try another word. You can also try:') : 'I did not understand that. Try one of these questions:') + '</span></p><div class="bar">' + m.hints.map(function (a) { return chip([a.en, a.rw]); }).join('') + '</div>';
+      return '<p><span class="gl-bot">' + fmt(m.text) + '</span>' + (m.used && m.used.length ? '<br><small class="hint">Based on: ' + esc(m.used.join('; ')) + '</small>' : '') + '</p>';
     }).join('') : '<p class="hint">No questions yet. Try one of the examples above.</p>';
     log.scrollTop = log.scrollHeight;
   };
+  var hr = new Date().getHours(); $('#askHi', el).textContent = (hr < 12 ? 'Good morning, {}. What would you like to know?' : hr < 18 ? 'Good afternoon, {}. What would you like to know?' : 'Good evening, {}. What would you like to know?').replace('{}', String(ME.name || '').split(' ')[0]);
   $('#askTips', el).innerHTML = tips.map(chip).join('');
   if (has('SETTINGS')) {
     $('#askAdmin', el).innerHTML = '<button class="btn small" id="askTeach">Teach the assistant</button><span id="askTeachN" class="hint"></span>';
@@ -1717,7 +1741,7 @@ PAGES.ask = async function (el) {
   }
   var send = async function (text) {
     text = String(text || '').trim(); if (!text || SUB.askBusy) return; SUB.askBusy = 1; q.value = '';
-    SUB.askH.push({ role: 'user', text: text }); paint(); log.insertAdjacentHTML('beforeend', '<p class="hint" id="askWait">Thinking...</p>'); $('#askGo', el).disabled = true;
+    SUB.askH.push({ role: 'user', text: text }); paint(); log.insertAdjacentHTML('beforeend', '<p class="hint gl-dots" id="askWait"><i></i><i></i><i></i> <span>Thinking...</span></p>'); $('#askGo', el).disabled = true;
     try {
       var r = await rawCall('assistAsk', [text]);
       if (r && r.data && r.data.expired) { signOut(true); return; }
