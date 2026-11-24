@@ -1656,14 +1656,38 @@ async function staffDocsModal(s) {
 // ====================================================================
 // MESSAGES PAGE (Chat)
 // ====================================================================
+/** Administrator: teach the assistant new wording (a question it did not understand = a report and a period). */
+async function askTeach(el) {
+  var d = await call('assistTrainingData'); if (!d) return;
+  var rep = {}; d.reports.forEach(function (r) { rep[r.key] = r; });
+  el.innerHTML = '<h2>Teach the assistant</h2><p class="hint">When the assistant does not understand a question, it is listed here. Choose the report that answers it, and the assistant will understand that wording and similar ones from then on. People only get answers from reports they are allowed to open.</p><div class="bar"><button class="btn" id="tBack">Back to the chat</button><button class="btn primary" id="tAdd">Teach a new phrase</button></div><h3>Questions it did not understand</h3><div id="tMiss"></div><h3>What it has been taught</h3><div id="tDone"></div>';
+  $('#tMiss', el).innerHTML = table([{ h: 'Question', k: 'question' }, { h: 'Times asked', k: 'times', n: 1 }, { h: 'Last asked', f: function (m) { return esc(String(m.last_at || '').slice(0, 16)) + ' ' + esc(m.last_by || ''); } }, { h: '', f: function (m) { return '<button class="btn small primary" data-teach="' + m.id + '">Teach</button> <button class="btn small" data-ign="' + m.id + '">Ignore</button>'; } }], d.missed, { empty: 'Nothing waiting. Every question was understood.' });
+  $('#tDone', el).innerHTML = table([{ h: 'When someone asks about', k: 'phrase' }, { h: 'It shows the report', k: 'report' }, { h: 'Period', k: 'period_name' }, { h: 'Taught by', f: function (t) { return esc(t.created_by) + ' ' + esc(String(t.created_at || '').slice(0, 10)); } }, { h: '', f: function (t) { return '<button class="btn small" data-forget="' + t.id + '">Forget</button>'; } }], d.taught, { empty: 'Nothing taught yet.' });
+  var form = function (phrase, missedId, t) {
+    var opts = d.reports.map(function (r) { return [r.key, r.group + ' - ' + r.label]; });
+    ask('Teach the assistant', [['phrase', 'When someone asks about', 'text', phrase || ''], ['report', 'Show this report', 'select', (t && t.report_key) || opts[0][0], opts], ['focus', 'For the revenue report, start with', 'select', (t && t.focus) || 'income', [['income', 'Total income'], ['occupancy', 'Occupancy']]], ['period', 'Period, if the question names none', 'select', (t && t.period) || '', d.periods]], async function (v) {
+      await call('assistTeach', { phrase: v('phrase'), report_key: v('report'), focus: v('focus'), period: v('period'), missed_id: missedId || 0 });
+      toast('Taught. Go back to the chat and try it.'); draw();
+    }, 'Teach');
+  };
+  $('#tBack', el).onclick = function () { SUB.askMode = ''; draw(); };
+  $('#tAdd', el).onclick = function () { form('', 0); };
+  el.onclick = function (e) {
+    var b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.teach) { var m = d.missed.filter(function (x) { return String(x.id) === b.dataset.teach; })[0]; form(m.question, m.id); }
+    else if (b.dataset.ign) { act(call('assistIgnore', +b.dataset.ign)).then(function () { draw(); }); }
+    else if (b.dataset.forget) { sure('Forget this phrase? The assistant will stop understanding it.', async function () { await act(call('assistForget', +b.dataset.forget)); draw(); }, 'Forget'); }
+  };
+}
 /** Ask the assistant: plain questions in English or Kinyarwanda, answered from the reports this person may already open. It reads only. Works without any AI service; if one is set up on the server it is used only for questions the built-in assistant does not understand. */
 PAGES.ask = async function (el) {
   SUB.askH = SUB.askH || [];
+  if (SUB.askMode === 'teach' && has('SETTINGS')) return askTeach(el);
   var rw = false; try { rw = localStorage.getItem('hotel_ui_language') === 'rw'; } catch (e) { }
   var tips = IS_SHOP() ? [['How much did we sell this week?', 'Twagurishije amafaranga angahe muri iki cyumweru?'], ['Which items are running low?', 'Ni ibihe bintu bigiye gushira?'], ['Who owes us money?', 'Ni nde utugomba amafaranga?'], ['What is our profit this year?', 'Inyungu yacu niingahe uyu mwaka?']]
     : IS_RENTAL() ? [['How much rent did we collect this month?', 'Twakusanyije ubukode bungana iki uku kwezi?'], ['Which tenants are late?', 'Ni abahe bakodesha batinze kwishyura?'], ['Which units are empty?', 'Ni izihe nzu zirimo ubusa?'], ['Which leases end soon?', 'Ni ayahe masezerano y\'ubukode agiye kurangira?']]
     : [['How much money did we earn this month?', 'Twinjije amafaranga angahe uku kwezi?'], ['How was occupancy last week?', 'Ibyumba byari birimo abantu bingana iki icyumweru gishize?'], ['Who owes us money?', 'Ni nde utugomba amafaranga?'], ['Who is arriving and leaving today?', 'Ni bande bahagera kandi bagenda uyu munsi?']];
-  el.innerHTML = '<h2>Ask AI</h2><p class="hint">Ask in plain words, in English or Kinyarwanda. The answer comes from your reports, with the numbers the system holds. It cannot change anything. Say the period if you want one: today, yesterday, last week, this month, last month, in March, or two dates.</p><div class="bar" id="askTips"></div><div id="askLog" class="card" style="min-height:140px"></div><div class="bar"><input id="askQ" style="flex:1;min-width:220px" maxlength="300" placeholder="Type your question..."><button class="btn primary" id="askGo">Ask</button><button class="btn" id="askClr">New chat</button></div>';
+  el.innerHTML = '<h2>Ask AI</h2><p class="hint">Ask in plain words, in English or Kinyarwanda. The answer comes from your reports, with the numbers the system holds. It cannot change anything. Say the period if you want one: today, yesterday, last week, this month, last month, in March, or two dates.</p><div class="bar" id="askTips"></div><div class="bar" id="askAdmin"></div><div id="askLog" class="card" style="min-height:140px"></div><div class="bar"><input id="askQ" style="flex:1;min-width:220px" maxlength="300" placeholder="Type your question..."><button class="btn primary" id="askGo">Ask</button><button class="btn" id="askClr">New chat</button></div>';
   var log = $('#askLog', el), q = $('#askQ', el), fmt = function (t) { return esc(t).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/\n/g, '<br>'); };
   var chip = function (p) { return '<button class="btn small" data-q="' + esc(rw ? p[1] : p[0]) + '">' + esc(rw ? p[1] : p[0]) + '</button>'; };
   var card = function (d) {
@@ -1686,6 +1710,11 @@ PAGES.ask = async function (el) {
     log.scrollTop = log.scrollHeight;
   };
   $('#askTips', el).innerHTML = tips.map(chip).join('');
+  if (has('SETTINGS')) {
+    $('#askAdmin', el).innerHTML = '<button class="btn small" id="askTeach">Teach the assistant</button><span id="askTeachN" class="hint"></span>';
+    $('#askTeach', el).onclick = function () { SUB.askMode = 'teach'; draw(); };
+    rawCall('assistTrainingData', []).then(function (r) { var n = r && r.ok ? r.data.missed.length : 0; if (n && $('#askTeachN', el)) $('#askTeachN', el).textContent = ' ' + n + ' waiting'; }).catch(function () { });
+  }
   var send = async function (text) {
     text = String(text || '').trim(); if (!text || SUB.askBusy) return; SUB.askBusy = 1; q.value = '';
     SUB.askH.push({ role: 'user', text: text }); paint(); log.insertAdjacentHTML('beforeend', '<p class="hint" id="askWait">Thinking...</p>'); $('#askGo', el).disabled = true;
@@ -1697,8 +1726,8 @@ PAGES.ask = async function (el) {
         var hist = SUB.askH.filter(function (m) { return m.text && !m.card && !m.hints; }).slice(0, -1).map(function (m) { return { role: m.role === 'user' ? 'user' : 'assistant', text: m.text }; });
         var a = await server('api', [TOKEN, 'askAi', [text, hist]]);
         if (a && a.data && a.data.expired) { signOut(true); return; }
-        if (a.ok) SUB.askH.push({ role: 'bot', text: a.data.answer, used: a.data.used }); else SUB.askH.push({ role: 'bot', hints: r.data.hints, notfound: r.data.notfound });
-      } else if (r.data.unknown) SUB.askH.push({ role: 'bot', hints: r.data.hints, notfound: r.data.notfound });
+        if (a.ok) SUB.askH.push({ role: 'bot', text: a.data.answer, used: a.data.used }); else { SUB.askH.push({ role: 'bot', hints: r.data.hints, notfound: r.data.notfound }); rawCall('assistMiss', [text]).catch(function () { }); }
+      } else if (r.data.unknown) { SUB.askH.push({ role: 'bot', hints: r.data.hints, notfound: r.data.notfound }); rawCall('assistMiss', [text]).catch(function () { }); }
       else SUB.askH.push({ role: 'bot', card: r.data });
     } catch (e) { SUB.askH.push({ role: 'bot', text: e.message || 'Connection problem. Check the internet and try again.' }); }
     SUB.askBusy = 0; $('#askGo', el).disabled = false; paint(); q.focus();
