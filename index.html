@@ -42,6 +42,7 @@ tr.sel td{background:var(--line)}
 .pill.RESERVED,.pill.PENDING,.pill.OPEN{background:#fef3c7;color:#92400e}.pill.CHECKED_IN,.pill.OCCUPIED{background:#dbeafe;color:#1e40af}
 .pill.CHECKED_OUT,.pill.DONE,.pill.RESOLVED,.pill.AVAILABLE{background:#dcfce7;color:#166534}.pill.CANCELLED,.pill.OUT_OF_ORDER,.pill.URGENT,.pill.HIGH{background:#fee2e2;color:#991b1b}.pill.DIRTY{background:#ffedd5;color:#9a3412}
 .rooms{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.cal{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--card)}.cal table{border-collapse:separate;border-spacing:0;min-width:100%;font-size:13px}.cal th,.cal td{border-bottom:1px solid var(--line);border-right:1px solid var(--line);padding:0;height:34px;min-width:44px;text-align:center}.cal th.cr{position:sticky;left:0;z-index:2;background:var(--card);text-align:left;padding:4px 8px;min-width:112px;font-weight:400}.cal th.cd{padding:3px 2px;background:var(--card);font-weight:400;line-height:1.1}.cal th.cd small{display:block;color:var(--mute);font-size:10px}.cal th.cd.we,.cal td.ce.we{background:rgba(0,0,0,.03)}.cal .today{background:rgba(59,130,246,.12)}.cal td.ce{cursor:pointer}.cal td.ce:hover{background:rgba(34,197,94,.18)}.cal td.cb{cursor:pointer;color:#0b2545;font-weight:600;padding:0 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:0;border-radius:6px}.cal td.cb.res{background:#bfdbfe}.cal td.cb.in{background:#bbf7d0}.cal td.cb.over{background:#fecaca}.cal tr.ooo th.cr{background:#fee2e2}.cal tr.sum td,.cal tr.sum th{background:rgba(0,0,0,.03);height:28px}.cal td.full{color:#b42318;font-weight:700}.lg i{display:inline-block;width:12px;height:12px;border-radius:3px;margin:0 4px 0 10px;vertical-align:-1px}.lg i.res{background:#bfdbfe}.lg i.in{background:#bbf7d0}.lg i.over{background:#fecaca}
 .room{border:2px solid var(--line);border-radius:12px;padding:10px 12px;background:var(--card);cursor:pointer}.room b{font-size:20px}.room small{display:block;color:var(--mute)}
 .room.AVAILABLE{border-color:#22c55e}.room.OCCUPIED{border-color:#3b82f6}.room.DIRTY{border-color:#f97316}.room.OUT_OF_ORDER{border-color:#ef4444;opacity:.85}
 .tabs{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}.tabs button{border:1px solid var(--line);background:var(--card);padding:7px 14px;border-radius:8px;cursor:pointer}.tabs button.on{background:var(--navy2);color:#fff;border-color:var(--navy2)}
@@ -327,7 +328,7 @@ function navPages0() {
   if (IS_RENTAL()) return rentalNav();
   var p = [];
   if (has('DASH')) p.push(['dashboard', 'Dashboard']);
-  if (has('BOOKINGS', 'BOOKINGS_VIEW', 'ASSIGN')) p.push(['bookings', 'Bookings']);
+  if (has('BOOKINGS', 'BOOKINGS_VIEW', 'ASSIGN')) { p.push(['bookings', 'Bookings']); p.push(['calendar', 'Calendar']); }
   if (has('ROOMS')) p.push(['rooms', 'Rooms']);
   if (has('REGISTRATION')) p.push(['registration', 'Registration']);
   if (has('ASSIGN')) p.push(['assign', 'Room assignment']);
@@ -408,7 +409,7 @@ PAGES.bookings = async function (el) {
   await load();
 };
 
-function newBooking(done, partyId, guestId) {
+function newBooking(done, partyId, guestId, pre) {
   var guestBlock = partyId
     ? '<input type="hidden" id="party" value="' + partyId + '"><p class="hint">Party #' + partyId + ' selected. All its members will be checked in to this room.</p>'
     : guestId 
@@ -441,7 +442,8 @@ function newBooking(done, partyId, guestId) {
   if (!partyId && !guestId) {
     var t; $('#gq', m).oninput = function () { clearTimeout(t); t = setTimeout(async function () { var gs = await call('searchGuests', $('#gq', m).value); $('#gs', m).innerHTML = '<option value="">- new guest below -</option>' + gs.slice(0, 30).map(function (g) { return '<option value="' + g.id + '">' + esc(g.name + (g.phone ? ' - ' + g.phone : '') + (g.blocked ? ' (BLOCKED)' : '')) + '</option>'; }).join(''); if (gs.length) $('#gs', m).value = gs[0].id; }, 300); };
   }
-  findRooms();
+  if (pre) { $('#ci', m).value = pre.ci; $('#co', m).value = pre.co; }
+  findRooms().then(function () { if (pre && pre.room) { $('#room', m).value = String(pre.room); $('#room', m).onchange(); } });
 }
 
 async function openFolio(id) {
@@ -1899,6 +1901,7 @@ PAGES.admin = async function (el) {
     ['departments', 'Departments', 'ACCESS'],
     ['menu', 'Menu', 'MENU'],
     ['audit', 'Audit log', 'AUDIT'],
+    ['notify', 'Notifications', 'NOTIFY'],
     ['settings', 'Settings & backup', 'SETTINGS']
   ].filter(function (t) { return has(t[2]); });
   if (!tabs.length) { el.innerHTML = '<p class="hint">You do not have admin access.</p>'; return; }
@@ -1911,6 +1914,7 @@ PAGES.admin = async function (el) {
   if (tab === 'departments') return adminDepartments(el, body);
   if (tab === 'menu') return adminMenu(el, body);
   if (tab === 'audit') return adminAudit(el, body);
+  if (tab === 'notify') return adminNotify(el, body);
   if (tab === 'settings') return adminSettings(el, body);
 };
 
@@ -2021,6 +2025,111 @@ async function adminAudit(el, body) {
   body.innerHTML = '<div class="bar"><input id="q" placeholder="Search"><label>From <input type="date" id="f"></label><label>To <input type="date" id="t"></label><button class="btn primary" id="go">Search</button></div><div id="list"></div>';
   var load = async function () { var rows = await call('auditList', $('#q', body).value, $('#f', body).value, $('#t', body).value); $('#list', body).innerHTML = '<div class="card">' + table([{ h: 'Time', f: function (r) { return esc(String(r.time).slice(0, 16)); } }, { h: 'Who', k: 'user' }, { h: 'Action', k: 'action' }, { h: 'Details', k: 'detail' }], rows, { empty: 'Nothing recorded.' }) + '</div>'; };
   $('#go', body).onclick = load; await load();
+}
+
+// ====================================================================
+// CALENDAR (rooms across dates) and AVAILABILITY
+// ====================================================================
+PAGES.calendar = async function (el) {
+  var v = SUB.cv = SUB.cv || { tab: 'grid', from: TODAY, days: 14, af: TODAY, at: addDays(TODAY, 1) };
+  el.innerHTML = '<h2>Calendar</h2><div class="tabs" id="ct"><button data-t="grid" class="' + (v.tab === 'grid' ? 'on' : '') + '">Rooms and dates</button><button data-t="avail" class="' + (v.tab === 'avail' ? 'on' : '') + '">Availability</button></div><div id="cb"></div>';
+  $('#ct', el).onclick = function (e) { var b = e.target.closest('button'); if (b) { v.tab = b.dataset.t; PAGES.calendar(el); } };
+  var body = $('#cb', el);
+  if (v.tab === 'avail') return calAvailability(body, v);
+  var g = await call('reservationGrid', v.from, v.days), dayName = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  var dates = g.summary.map(function (s) { return s.date; }), canBook = has('ASSIGN');
+  var head = '<tr><th class="cr">Room</th>' + dates.map(function (d) { var dt = new Date(d + 'T00:00:00'); return '<th class="cd' + (d === g.today ? ' today' : '') + (dt.getDay() === 0 || dt.getDay() === 6 ? ' we' : '') + '">' + dayName[dt.getDay()] + '<br><b>' + d.slice(8) + '</b><small>' + d.slice(5, 7) + '</small></th>'; }).join('') + '</tr>';
+  var rows = g.rooms.map(function (r) {
+    var cells = '', pos = 0;
+    r.bookings.sort(function (a, b) { return a.check_in < b.check_in ? -1 : 1; }).forEach(function (b) {
+      var s = b.check_in < g.from ? 0 : dates.indexOf(b.check_in), e = b.check_out > g.to ? g.days : dates.indexOf(b.check_out); if (s < pos) s = pos; if (e <= s) return;
+      for (var i = pos; i < s; i++) cells += '<td class="ce' + (dates[i] === g.today ? ' today' : '') + '" data-r="' + r.id + '" data-d="' + dates[i] + '"></td>';
+      var cls = b.overstay || b.late ? 'over' : b.status === 'CHECKED_IN' ? 'in' : 'res';
+      cells += '<td class="cb ' + cls + '" colspan="' + (e - s) + '" data-b="' + b.id + '" title="' + esc(b.guest + (b.party ? ' (' + b.party + ')' : '') + ' - B' + b.id + ' - ' + b.check_in + ' to ' + b.booked_out + (b.overstay ? ' - STILL IN, should have left' : b.late ? ' - SHOULD HAVE ARRIVED' : '')) + '">' + (b.check_in < g.from ? '&lsaquo; ' : '') + esc(b.guest) + (b.late ? ' (late)' : b.overstay ? ' (overdue)' : '') + '</td>'; pos = e;
+    });
+    for (var i = pos; i < g.days; i++) cells += '<td class="ce' + (dates[i] === g.today ? ' today' : '') + '" data-r="' + r.id + '" data-d="' + dates[i] + '"></td>';
+    return '<tr class="' + (r.status === 'OUT_OF_ORDER' ? 'ooo' : '') + '"><th class="cr"><b>' + esc(r.room_number) + '</b> <small>' + esc(r.room_type) + (r.status === 'OUT_OF_ORDER' ? ' - out of order' : r.status === 'DIRTY' ? ' - dirty' : '') + '</small></th>' + cells + '</tr>';
+  }).join('');
+  var foot = '<tr class="sum"><th class="cr">Rooms sold</th>' + g.summary.map(function (s) { return '<td>' + s.sold + '</td>'; }).join('') + '</tr><tr class="sum"><th class="cr">Rooms free</th>' + g.summary.map(function (s) { return '<td class="' + (s.free === 0 ? 'full' : '') + '">' + s.free + '</td>'; }).join('') + '</tr><tr class="sum"><th class="cr">Arriving / leaving</th>' + g.summary.map(function (s) { return '<td><small>' + (s.arriving || '-') + '/' + (s.departing || '-') + '</small></td>'; }).join('') + '</tr>';
+  body.innerHTML = '<div class="bar"><button class="btn" id="cp">&lsaquo; Earlier</button><button class="btn" id="cn">Later &rsaquo;</button><button class="btn" id="ctd">Today</button><label>From <input type="date" id="cf" value="' + v.from + '"></label><select id="cdn"><option value="7">7 days</option><option value="14">14 days</option><option value="21">21 days</option><option value="31">31 days</option></select><span style="flex:1"></span>' +
+    '<span class="lg"><i class="res"></i> Reserved <i class="in"></i> In the hotel <i class="over"></i> Late or overdue</span></div>' +
+    (g.rooms.length ? '<div class="cal"><table>' + head + rows + foot + '</table></div>' : '<p class="hint">There are no rooms yet. Add rooms first.</p>') + (canBook ? '<p class="hint">Tap an empty square to make a booking for that room and day. Tap a coloured bar to open the booking.</p>' : '');
+  $('#cdn', body).value = String(v.days);
+  var go = function (from) { v.from = from; PAGES.calendar(el); };
+  $('#cp', body).onclick = function () { go(addDays(v.from, -v.days)); }; $('#cn', body).onclick = function () { go(addDays(v.from, v.days)); }; $('#ctd', body).onclick = function () { go(TODAY); };
+  $('#cf', body).onchange = function () { if ($('#cf', body).value) go($('#cf', body).value); }; $('#cdn', body).onchange = function () { v.days = Number($('#cdn', body).value); PAGES.calendar(el); };
+  body.querySelectorAll('td.cb').forEach(function (td) { td.onclick = function () { openFolio(Number(td.dataset.b)); }; });
+  if (canBook) body.querySelectorAll('td.ce').forEach(function (td) { td.onclick = function () { newBooking(function () { PAGES.calendar(el); }, 0, 0, { room: td.dataset.r, ci: td.dataset.d, co: addDays(td.dataset.d, 1) }); }; });
+}
+async function calAvailability(body, v) {
+  body.innerHTML = '<div class="bar"><label>Arrival <input type="date" id="af" value="' + v.af + '"></label><label>Departure <input type="date" id="at" value="' + v.at + '"></label><button class="btn primary" id="ag">Check</button></div><div id="ar"></div>';
+  var load = async function () {
+    v.af = $('#af', body).value; v.at = $('#at', body).value;
+    if (!v.af || !v.at || v.af >= v.at) { $('#ar', body).innerHTML = '<p class="hint">The departure must be after the arrival.</p>'; return; }
+    var a = await call('availabilitySummary', v.af, v.at);
+    $('#ar', body).innerHTML = '<p><b>' + a.free + '</b> of ' + a.total + ' rooms are free for <b>' + a.nights + '</b> night' + (a.nights === 1 ? '' : 's') + ' (' + esc(a.from) + ' to ' + esc(a.to) + ').</p><div class="card">' + table([
+      { h: 'Room type', k: 'type' }, { h: 'Free', f: function (r) { return '<b class="' + (r.free ? '' : 'err') + '">' + r.free + '</b> of ' + r.total; } },
+      { h: 'Rate per night', f: function (r) { return r.min_rate === r.max_rate ? num(r.min_rate) : num(r.min_rate) + ' - ' + num(r.max_rate); } }, { h: 'Sleeps', k: 'capacity', n: 1 },
+      { h: 'Free rooms', f: function (r) { return esc(r.rooms.join(', ') || '-'); } }], a.types, { empty: 'There are no rooms yet.' }) + '</div>' + (has('ASSIGN') && a.free ? '<p><button class="btn primary" id="anb">Make a booking for these dates</button></p>' : '');
+    if ($('#anb', body)) $('#anb', body).onclick = function () { newBooking(load, 0, 0, { ci: v.af, co: v.at }); };
+  };
+  $('#ag', body).onclick = load; $('#af', body).onchange = function () { if ($('#at', body).value <= $('#af', body).value) $('#at', body).value = addDays($('#af', body).value, 1); load(); }; $('#at', body).onchange = load;
+  await load();
+}
+
+// ---------- Notifications (email) ----------
+var NOTE_STATUS = { QUEUED: ['Waiting', 'var(--mute)'], SENDING: ['Sending', 'var(--navy2)'], SENT: ['Sent', 'var(--ok, #1a7f4b)'], FAILED: ['Failed', 'var(--bad, #b42318)'], CANCELLED: ['Cancelled', 'var(--mute)'] };
+async function adminNotify(el, body) {
+  var st = await call('notifySettings'), view = SUB.nv = SUB.nv || 'outbox';
+  var head = '<div class="tabs" id="nt"><button data-v="outbox" class="' + (view === 'outbox' ? 'on' : '') + '">Sent and waiting</button><button data-v="set" class="' + (view === 'set' ? 'on' : '') + '">Settings</button></div>';
+  var g = st.gmail || {};
+  var banner = !g.configured ? '<div class="card" style="border-left:4px solid var(--bad,#b42318)"><b>No Gmail account is connected yet.</b> Messages will wait here until one is. Ask the person who installed the system to follow the Gmail steps in the setup guide (a Gmail address and a Google "App Password").</div>'
+    : '<p class="hint">Sending from <b>' + esc(g.user) + '</b>. Sent today: <b>' + st.sent_today + '</b> of the daily limit of <b>' + st.daily_cap + '</b>.' + (st.enabled ? '' : ' <span class="err">Notifications are switched off, so nothing is sent automatically.</span>') + '</p>';
+  body.innerHTML = head + banner + '<div id="nb"></div>';
+  $('#nt', body).onclick = function (e) { var b = e.target.closest('button'); if (b) { SUB.nv = b.dataset.v; adminNotify(el, body); } };
+  var nb = $('#nb', body);
+  if (view === 'set') {
+    nb.innerHTML = '<div class="card"><h3>Email settings</h3><div class="f" style="max-width:560px">' +
+      '<label><input type="checkbox" id="ne"' + (st.enabled ? ' checked' : '') + '> Send emails automatically</label><div></div>' +
+      '<label>Sender name</label><input id="nf" placeholder="' + esc(SET.hotel_name) + '" value="' + esc(st.from_name) + '">' +
+      '<label>Guests reply to</label><input id="nr" type="email" placeholder="reception@yourhotel.com" value="' + esc(st.reply_to) + '">' +
+      '<label>Staff emails (for alerts and the morning summary, separate with commas)</label><input id="ns" value="' + esc(st.staff_emails) + '">' +
+      '<label>Line added to guest emails (check-in and check-out times, address...)</label><textarea id="ni" rows="2">' + esc(st.info) + '</textarea>' +
+      '<label>Signature (phone, website...)</label><textarea id="ng" rows="2">' + esc(st.signature) + '</textarea>' +
+      '<label>Daily limit of emails</label><input id="nc" type="number" min="0" max="2000" value="' + st.daily_cap + '"></div>' +
+      '<p class="hint">Gmail allows about 500 emails a day from a normal account. Keep the limit under that. Waiting emails are sent the next day.</p></div>' +
+      '<div class="card"><h3>Which emails are sent</h3>' + st.kinds.map(function (k) { return '<label style="display:block;margin:6px 0"><input type="checkbox" data-k="' + k.key + '"' + (k.on ? ' checked' : '') + '> ' + esc(k.label) + ' <span class="hint">(' + k.who.toLowerCase() + ')</span></label>'; }).join('') +
+      '<p class="hint">Guest emails are only sent when the guest has an email address in their record. Staff emails go to the addresses above.</p><p><button class="btn primary" id="nsv">Save</button></p></div>' +
+      '<div class="card"><h3>Test</h3><div class="bar"><input id="nt1" type="email" placeholder="your email address" style="min-width:260px"><button class="btn" id="ntb">Send a test email</button></div><p class="hint">Use this to check that the Gmail connection works. The result appears under "Sent and waiting".</p></div>';
+    $('#nsv', nb).onclick = function () {
+      var ks = {}; nb.querySelectorAll('input[data-k]').forEach(function (c) { ks[c.dataset.k] = c.checked; });
+      act(call('saveNotifySettings', { enabled: $('#ne', nb).checked, from_name: $('#nf', nb).value, reply_to: $('#nr', nb).value, staff_emails: $('#ns', nb).value, info: $('#ni', nb).value, signature: $('#ng', nb).value, daily_cap: $('#nc', nb).value, kinds: ks }).then(function () { toast('Saved.'); adminNotify(el, body); }));
+    };
+    $('#ntb', nb).onclick = function () { act(call('notifyTest', $('#nt1', nb).value).then(function () { return call('notifySend'); }).then(function (r) { toast(r && r.sent ? 'Test email sent. Check the inbox.' : 'The test email was prepared. See the list below for its result.'); SUB.nv = 'outbox'; adminNotify(el, body); })); };
+    return;
+  }
+  var flt = SUB.nf = SUB.nf || 'ALL', q = SUB.nq || '';
+  var load = async function () {
+    var d = await call('notifyList', { status: flt, q: $('#nq', nb) ? $('#nq', nb).value : q });
+    SUB.nq = $('#nq', nb) ? $('#nq', nb).value : q;
+    var c = d.counts, chips = [['ALL', 'All'], ['QUEUED', 'Waiting (' + c.QUEUED + ')'], ['SENT', 'Sent (' + c.SENT + ')'], ['FAILED', 'Failed (' + c.FAILED + ')'], ['CANCELLED', 'Cancelled (' + c.CANCELLED + ')']];
+    $('#nl', nb).innerHTML = '<div class="tabs" id="nfl">' + chips.map(function (x) { return '<button data-s="' + x[0] + '" class="' + (x[0] === flt ? 'on' : '') + '">' + x[1] + '</button>'; }).join('') + '</div><div class="card">' + table([
+      { h: 'Created', f: function (r) { return esc(String(r.created_at).slice(0, 16)); } },
+      { h: 'To', f: function (r) { return esc(r.to_name ? r.to_name + ' ' : '') + '<span class="hint">' + esc(r.to_email) + '</span>'; } },
+      { h: 'Subject', k: 'subject' },
+      { h: 'Status', f: function (r) { var s = NOTE_STATUS[r.status] || [r.status, '']; return '<b style="color:' + s[1] + '">' + s[0] + '</b>' + (r.error ? '<br><span class="hint">' + esc(r.error) + '</span>' : ''); } },
+      { h: '', f: function (r) { return (r.status === 'FAILED' || r.status === 'CANCELLED' ? '<button class="btn" data-a="retry" data-id="' + r.id + '">Send again</button> ' : '') + (r.status === 'QUEUED' || r.status === 'FAILED' ? '<button class="btn" data-a="cancel" data-id="' + r.id + '">Cancel</button>' : ''); } }
+    ], d.rows, { click: true, empty: 'No emails yet.' }) + '</div>';
+    $('#nfl', nb).onclick = function (e) { var b = e.target.closest('button'); if (b) { SUB.nf = b.dataset.s; adminNotify(el, body); } };
+    wireRows($('#nl', nb), d.rows, async function (r) { var m = await call('notifyGet', r.id); modal(m.subject, '<p class="hint">To: ' + esc(m.to_email) + ' &middot; ' + esc((NOTE_STATUS[m.status] || [m.status])[0]) + (m.sent_at ? ' &middot; ' + esc(String(m.sent_at).slice(0, 16)) : '') + '</p>' + (m.error ? '<p class="err">' + esc(m.error) + '</p>' : '') + '<pre style="white-space:pre-wrap;font-family:inherit">' + esc(m.body) + '</pre>'); });
+    $('#nl', nb).querySelectorAll('button[data-a]').forEach(function (b) { b.onclick = function () { act(call(b.dataset.a === 'retry' ? 'notifyRetry' : 'notifyCancel', Number(b.dataset.id)).then(function () { return b.dataset.a === 'retry' ? call('notifySend') : 0; }).then(function () { toast(b.dataset.a === 'retry' ? 'Sending again.' : 'Cancelled.'); load(); })); }; });
+  };
+  nb.innerHTML = '<div class="bar"><input id="nq" placeholder="Search email, name, subject" style="min-width:240px" value="' + esc(q) + '"><button class="btn" id="ngo">Search</button><span style="flex:1"></span><button class="btn" id="nsn">Send waiting now</button><button class="btn" id="nrn">Run reminders now</button><button class="btn primary" id="nwr">Write an email</button></div><div id="nl"></div>';
+  $('#ngo', nb).onclick = load; $('#nq', nb).onkeydown = function (e) { if (e.key === 'Enter') load(); };
+  $('#nsn', nb).onclick = function () { act(call('notifySend').then(function (r) { toast(r && r.error ? r.error : 'Sent ' + ((r && r.sent) || 0) + (r && r.failed ? ', failed ' + r.failed : '') + '.', !!(r && r.error)); load(); })); };
+  $('#nrn', nb).onclick = function () { act(call('notifyRun').then(function (r) { toast(r.queued ? r.queued + ' reminder(s) prepared.' : 'No new reminders to send.'); return call('notifySend'); }).then(load)); };
+  $('#nwr', nb).onclick = function () { ask('Write an email', [['to', 'To (email address)', 'email', ''], ['nm', 'Name (optional)', 'text', ''], ['su', 'Subject', 'text', ''], ['bd', 'Message', 'textarea', '']], function (g) { return call('notifyCompose', { to: g('to'), name: g('nm'), subject: g('su'), body: g('bd') }).then(function () { return call('notifySend'); }).then(function () { toast('The email is being sent.'); load(); }); }, 'Send'); };
+  await load();
 }
 
 async function adminSettings(el, body) {
