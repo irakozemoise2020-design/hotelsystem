@@ -995,7 +995,7 @@ async function editGuest(g) {
 
 PAGES.housekeeping = async function (el) {
   var tab = SUB.hk = SUB.hk || (has('HK') ? 'clean' : has('MAINT') ? 'repairs' : 'lists');
-  el.innerHTML = '<h2>Housekeeping and repairs</h2><div class="tabs">' + (has('HK') ? '<button data-t="clean" class="' + (tab === 'clean' ? 'on' : '') + '">Cleaning</button>' : '') + (has('MAINT') ? '<button data-t="repairs" class="' + (tab === 'repairs' ? 'on' : '') + '">Repairs</button><button data-t="equip" class="' + (tab === 'equip' ? 'on' : '') + '">Equipment</button><button data-t="plans" class="' + (tab === 'plans' ? 'on' : '') + '">Planned maintenance</button>' : '') + (has('HOUSEKEEPING') ? '<button data-t="lists" class="' + (tab === 'lists' ? 'on' : '') + '">Checklists</button>' : '') + '</div><div id="body"></div>';
+  el.innerHTML = '<h2>Housekeeping and repairs</h2><div class="tabs">' + (has('HK') ? '<button data-t="clean" class="' + (tab === 'clean' ? 'on' : '') + '">Cleaning</button>' : '') + (has('MAINT') ? '<button data-t="repairs" class="' + (tab === 'repairs' ? 'on' : '') + '">Repairs</button><button data-t="equip" class="' + (tab === 'equip' ? 'on' : '') + '">Equipment</button><button data-t="plans" class="' + (tab === 'plans' ? 'on' : '') + '">Planned maintenance</button>' : '') + (has('HOUSEKEEPING') ? '<button data-t="lists" class="' + (tab === 'lists' ? 'on' : '') + '">Checklists</button>' : '') + (has('ROOMITEMS') ? '<button data-t="rcontents" class="' + (tab === 'rcontents' ? 'on' : '') + '">Room contents</button><button data-t="rchecks" class="' + (tab === 'rchecks' ? 'on' : '') + '">Room checks</button>' : '') + '</div><div id="body"></div>';
   el.querySelector('.tabs').onclick = function (e) { var b = e.target.closest('button'); if (b) { SUB.hk = b.dataset.t; PAGES.housekeeping(el); } };
   var body = $('#body', el), rooms = await call('rooms');
   var roomOpts = rooms.map(function (r) { return [r.id, r.room_number]; });
@@ -1007,6 +1007,8 @@ PAGES.housekeeping = async function (el) {
     body.querySelectorAll('[data-a]').forEach(function (b) { b.onclick = function () { ask('Assign to', [['n', 'Name', 'text']], function (g) { return call('hkAssign', +b.dataset.a, g('n')).then(function () { PAGES.housekeeping(el); }); }); }; });
     $('#add', el).onclick = function () { ask('New task', [['r', 'Room', 'select', '', roomOpts], ['t', 'Task', 'text', 'Deep clean'], ['n', 'Note', 'text']], function (g) { return call('hkAdd', g('r'), g('t'), g('n')).then(function () { PAGES.housekeeping(el); }); }); };
   } else if (tab === 'lists') { await hkLists(el, body);
+  } else if (tab === 'rcontents') { await roomContentsTab(el, body);
+  } else if (tab === 'rchecks') { await roomChecksTab(body);
   } else if (tab === 'equip') { await equipTab(el, body);
   } else if (tab === 'plans') { await plansTab(el, body);
   } else {
@@ -1016,6 +1018,58 @@ PAGES.housekeeping = async function (el) {
     $('#add', el).onclick = function () { ask('Report a problem', [['r', 'Room', 'select', '', roomOpts], ['d', 'What is wrong', 'textarea'], ['p', 'Priority', 'select', 'NORMAL', ['LOW', 'NORMAL', 'HIGH', 'URGENT']], ['b', 'Room cannot be used', 'check']], function (g) { return call('issueAdd', g('r'), g('d'), g('p'), g('b')).then(function () { PAGES.housekeeping(el); }); }, 'Report'); };
   }
 };
+
+// ====================================================================
+// ROOM CONTENTS AND ROOM CHECKS (Stage 36)
+// ====================================================================
+async function roomContentsTab(el, body) {
+  var rows = await call('roomItemsRooms'), back = function () { PAGES.housekeeping(el); };
+  body.innerHTML = '<p class="hint">What each room should hold (towels, kettle, remote...). Press <b>Check</b> to record what is missing or damaged. If the guest is still in the room it can go on the guest\'s bill.</p><div class="card">' + table([{ h: 'Room', k: 'room_number' }, { h: 'Type', k: 'room_type' }, { h: 'Guest now', k: 'guest' }, { h: 'List', f: function (r) { return r.kinds ? r.kinds + ' items (' + r.pieces + ' pieces)' : '<span class="hint">no list yet</span>'; } }, { h: 'Last check', f: function (r) { return r.last_check ? esc(r.last_check) + (r.last_issues ? ' ' + pillL('CANCELLED', r.last_issues + ' missing or damaged') : '') : ''; } }, { h: '', f: function (r) { return '<button class="btn small" data-l="' + r.room_id + '">List</button> <button class="btn small primary" data-c="' + r.room_id + '"' + (r.kinds ? '' : ' disabled title="Make the list first"') + '>Check</button>'; } }], rows, { empty: 'No rooms yet.' }) + '</div>';
+  body.querySelectorAll('[data-l]').forEach(function (b) { b.onclick = function () { roomListDialog(+b.dataset.l, rows, back); }; });
+  body.querySelectorAll('[data-c]').forEach(function (b) { b.onclick = function () { roomCheckDialog(+b.dataset.c, back); }; });
+}
+async function roomListDialog(roomId, rooms, done) {
+  var g = await call('roomItemsGet', roomId), choices = await call('roomItemChoices'), lines = g.lines.map(function (l) { return { item_id: l.item_id, qty: l.qty }; });
+  if (!choices.length) return toast('There are no items yet. Add items in Inventory first.', true);
+  var paint = function () {
+    return '<p class="hint">Everything that should be in room ' + esc(g.room.room_number) + '.</p><table><tr><th>Item</th><th class="n">How many</th><th></th></tr>' + lines.map(function (l, k) {
+      return '<tr><td><select data-k="' + k + '" data-f="item_id"><option value="">-</option>' + choices.map(function (c) { return '<option value="' + c.id + '"' + (+l.item_id === c.id ? ' selected' : '') + '>' + esc(c.name + (c.kind ? ' (' + c.kind + ')' : '')) + '</option>'; }).join('') + '</select></td><td class="n"><input type="number" min="1" data-k="' + k + '" data-f="qty" value="' + esc(l.qty) + '" style="width:80px"></td><td><button class="btn small danger" data-x="' + k + '">Remove</button></td></tr>';
+    }).join('') + '</table><div class="bar"><button class="btn small" id="rla">Add an item</button></div>';
+  };
+  var save = function () { var ls = lines.filter(function (l) { return l.item_id; }).map(function (l) { return { item_id: +l.item_id, qty: l.qty }; }); return call('roomItemsSave', roomId, ls); };
+  var m = modal('Room ' + g.room.room_number + ': contents', '<div id="rl"></div>', [['Close'], ['Save and copy to other rooms', function () { return save().then(function () { copyRoomList(roomId, rooms, done); }); }], ['Save list', function () { return save().then(function () { toast('Saved.'); done(); }); }, 'primary']]);
+  var draw = function () {
+    $('#rl', m.el).innerHTML = paint();
+    m.el.querySelectorAll('[data-k]').forEach(function (i) { i.onchange = function () { lines[+i.dataset.k][i.dataset.f] = i.value; }; });
+    m.el.querySelectorAll('[data-x]').forEach(function (b) { b.onclick = function () { lines.splice(+b.dataset.x, 1); draw(); }; });
+    $('#rla', m.el).onclick = function () { lines.push({ item_id: '', qty: 1 }); draw(); };
+  };
+  if (!lines.length) lines.push({ item_id: '', qty: 1 }); draw();
+}
+function copyRoomList(fromId, rooms, done) {
+  var others = rooms.filter(function (r) { return r.room_id !== fromId; }), src = rooms.filter(function (r) { return r.room_id === fromId; })[0];
+  var m = modal('Copy the list of room ' + (src ? src.room_number : '') + ' to other rooms', '<p class="hint">The lists of the rooms you tick are <b>replaced</b> by this list.</p><div class="bar"><label><input type="checkbox" id="call"> All rooms</label>' + (src ? '<label><input type="checkbox" id="ctype"> Same type only (' + esc(src.room_type) + ')</label>' : '') + '</div><div style="max-height:260px;overflow:auto">' + others.map(function (r) { return '<label style="display:block"><input type="checkbox" data-r="' + r.room_id + '" data-t="' + esc(r.room_type) + '"> ' + esc(r.room_number) + ' <span class="hint">' + esc(r.room_type) + (r.kinds ? ', has a list of ' + r.kinds + ' items' : '') + '</span></label>'; }).join('') + '</div>', [['Cancel'], ['Copy', function (mm) { var ids = [].slice.call(mm.querySelectorAll('[data-r]')).filter(function (c) { return c.checked; }).map(function (c) { return +c.dataset.r; }); return call('roomItemsCopy', fromId, ids).then(function (n) { toast('Copied to ' + n + ' room(s).'); done(); }); }, 'primary']], true);
+  var pick = function (f) { m.el.querySelectorAll('[data-r]').forEach(function (c) { c.checked = f(c); }); };
+  $('#call', m.el).onchange = function () { var on = $('#call', m.el).checked; pick(function () { return on; }); };
+  if (src) $('#ctype', m.el).onchange = function () { var on = $('#ctype', m.el).checked; pick(function (c) { return on && c.dataset.t === src.room_type; }); };
+}
+async function roomCheckDialog(roomId, done) {
+  var g = await call('roomItemsGet', roomId), canCharge = has('BILLING_CHARGE'), st = g.lines.map(function (l) { return { m: 0, d: 0, p: l.price }; });
+  var body = '<p class="hint">Write how many pieces are <b>missing</b> or <b>damaged</b>. Leave 0 when everything is there.</p><table><tr><th>Item</th><th class="n">Should be</th><th class="n">Missing</th><th class="n">Damaged</th>' + (canCharge ? '<th class="n">Price each</th>' : '') + '</tr>' + g.lines.map(function (l, k) {
+    return '<tr><td>' + esc(l.item) + '</td><td class="n">' + l.qty + '</td><td class="n"><input type="number" min="0" max="' + l.qty + '" value="0" data-k="' + k + '" data-f="m" style="width:70px"></td><td class="n"><input type="number" min="0" max="' + l.qty + '" value="0" data-k="' + k + '" data-f="d" style="width:70px"></td>' + (canCharge ? '<td class="n"><input type="number" min="0" value="' + l.price + '" data-k="' + k + '" data-f="p" style="width:90px"></td>' : '') + '</tr>';
+  }).join('') + '</table><p id="rct" class="hint"></p>' +
+    (g.booking_id && canCharge ? '<label><input type="checkbox" id="rcc" checked> Put it on the bill of <b>' + esc(g.guest) + '</b> (room ' + esc(g.room.room_number) + ')</label>' : '<p class="hint">' + (g.booking_id ? 'You cannot charge a guest.' : 'Nobody is in this room, so nothing can be charged. The check is only recorded.') + '</p>') + '<div class="f"><label for="rcn">Note</label><div><input id="rcn" type="text"></div></div>';
+  var m = modal('Check room ' + g.room.room_number, body, [['Cancel'], ['Save the check', function () {
+    var lines = g.lines.map(function (l, k) { var o = { item_id: l.item_id, missing: st[k].m, damaged: st[k].d }; if (canCharge) o.price = st[k].p; return o; }), ch = $('#rcc', m.el) ? $('#rcc', m.el).checked : false;
+    return call('roomCheck', { room_id: roomId, charge: ch ? 1 : 0, note: $('#rcn', m.el).value, lines: lines }).then(function (r) { toast(r.issues ? (r.charged ? 'Saved. ' + money(r.charged) + ' put on the guest bill.' : 'Saved with ' + r.issues + ' missing or damaged.') : 'Saved. Everything is in place.'); done(); });
+  }, 'primary']]);
+  var upd = function () { var t = 0, n = 0; g.lines.forEach(function (l, k) { var c = st[k].m + st[k].d; n += c; t += c * (+st[k].p || 0); }); $('#rct', m.el).textContent = n ? n + ' piece(s) missing or damaged' + (canCharge ? ', worth ' + money(t) + ' at these prices.' : '.') : ''; };
+  m.el.querySelectorAll('[data-k]').forEach(function (i) { i.oninput = function () { st[+i.dataset.k][i.dataset.f] = i.value === '' ? 0 : +i.value; upd(); }; });
+}
+async function roomChecksTab(body) {
+  var rows = await call('roomChecks', {}), cost = rows.length && rows[0].loss !== undefined;
+  body.innerHTML = '<p class="hint">Every room check, newest first.</p><div class="card">' + table([{ h: 'When', k: 'at' }, { h: 'Room', k: 'room' }, { h: 'By', k: 'by' }, { h: 'Found', f: function (r) { return r.what ? esc(r.what) : '<span class="hint">all in place</span>'; } }, { h: 'Charged to guest', n: 1, f: function (r) { return r.charged ? money(r.charged) : ''; } }].concat(cost ? [{ h: 'Loss at cost', n: 1, f: function (r) { return r.loss ? money(r.loss) : ''; } }] : []).concat([{ h: 'Note', k: 'note' }]), rows, { empty: 'No room checks yet.' }) + '</div>';
+}
 
 PAGES.restaurant = async function (el) {
   var guests = await call('inHouse'), menu = await call('menu');
@@ -1106,17 +1160,21 @@ PAGES.inventory = async function (el) {
 async function loadDeptInv(el, deptId) {
   var body = $('#invBody', el);
   var data = await call('deptInventory', deptId);
-  body.innerHTML = '<p class="hint">These are the items currently held by ' + esc(data.dept.name) + '.</p>' +
+  var showCost = data.total_value !== undefined, WO = ['Broken', 'Damaged', 'Lost', 'Stolen', 'Worn out', 'Stained', 'Expired', 'Sold', 'Other'];
+  body.innerHTML = '<p class="hint">These are the items currently held by ' + esc(data.dept.name) + '.' + (showCost ? ' Value of everything here at cost: <b>' + money(data.total_value) + '</b>.' : '') + ' A <b>level</b> warns you when an item is at or below that number.</p>' +
     '<div class="bar"><button class="btn primary" id="addItem"' + nope('ITEM_EDIT') + '>Add new item</button><button class="btn" id="addStock"' + nope('STOCK_ADD') + '>Add stock</button></div>' +
     '<div class="card">' + table([
-      { h: 'Item', k: 'name' }, { h: 'Kind', k: 'kind' }, { h: 'Type', k: 'type' }, { h: 'Qty', n: 1, k: 'qty' },
-      { h: '', f: function (r) { return '<button class="btn small" data-rm="' + r.id + '"' + nope('STOCK_REMOVE') + '>Remove</button> <button class="btn small" data-mv="' + r.id + '"' + nope('STOCK_MOVE') + '>Move</button> <button class="btn small" data-ed="' + r.id + '"' + nope('ITEM_EDIT') + '>Edit</button>'; } }
-    ], data.items, { empty: 'No items yet.' }) + '</div>';
+      { h: 'Item', k: 'name' }, { h: 'Kind', k: 'kind' }, { h: 'Type', k: 'type' }, { h: 'Qty', n: 1, k: 'qty' }, { h: 'Level', n: 1, f: function (r) { return r.min ? (r.qty <= r.min ? '<b class="err">' + r.min + '</b>' : r.min) : ''; } }].concat(showCost ? [{ h: 'Cost each', n: 1, f: function (r) { return r.cost ? money(r.cost) : '<span class="hint">not set</span>'; } }, { h: 'Value', n: 1, f: function (r) { return money(r.value); } }] : []).concat([
+      { h: '', f: function (r) { return '<button class="btn small" data-rm="' + r.id + '"' + nope('STOCK_REMOVE') + '>Remove</button> <button class="btn small" data-mv="' + r.id + '"' + nope('STOCK_MOVE') + '>Move</button> <button class="btn small" data-lv="' + r.id + '"' + nope('ITEM_EDIT') + '>Level</button> <button class="btn small" data-ed="' + r.id + '"' + nope('ITEM_EDIT') + '>Edit</button>'; } }
+    ]), data.items, { empty: 'No items yet.' }) + '</div>';
+  body.querySelectorAll('[data-lv]').forEach(function (b) {
+    b.onclick = function () { var i = data.items.filter(function (x) { return x.id === +b.dataset.lv; })[0]; ask('Warn me when ' + i.name + ' is low', [['m', 'Warn at or below this number (0 = no warning)', 'number', i.min || 0]], function (g) { return act(call('invLevelSave', { item_id: i.id, dept_id: deptId, min_qty: g('m') }).then(function () { toast('Saved.'); loadDeptInv(el, deptId); })); }); };
+  });
 
   $('#addItem', body).onclick = function () {
-    ask('New item', [['n', 'Name (e.g. Wooden chair)', 'text'], ['k', 'Kind (e.g. Chairs)', 'text'], ['t', 'Type (e.g. Wood)', 'text'], ['q', 'Initial quantity', 'number', 1]], function (g) {
+    ask('New item', [['n', 'Name (e.g. Wooden chair)', 'text'], ['k', 'Kind (e.g. Chairs)', 'text'], ['t', 'Type (e.g. Wood)', 'text'], ['q', 'Initial quantity', 'number', 1]].concat(showCost ? [['c', 'Cost of one piece (what the hotel paid)', 'number'], ['cp', 'Price to charge a guest if lost or broken', 'number']] : []), function (g) {
       return act((async function () {
-        var itemId = await call('saveInvItem', { name: g('n'), kind: g('k'), type: g('t') });
+        var itemId = await call('saveInvItem', { name: g('n'), kind: g('k'), type: g('t'), cost: showCost ? g('c') : '', charge_price: showCost ? g('cp') : '' });
         await call('addInvStock', itemId, deptId, g('q'), 'Initial stock');
         toast('Item added.'); loadDeptInv(el, deptId);
       })());
@@ -1125,8 +1183,8 @@ async function loadDeptInv(el, deptId) {
 
   $('#addStock', body).onclick = function () {
     if (!data.items.length) { toast('Add an item first.', true); return; }
-    ask('Add stock', [['i', 'Item', 'select', '', data.items.map(function (i) { return [i.id, i.name]; })], ['q', 'Qty to add', 'number', 1]], function (g) {
-      return act(call('addInvStock', +g('i'), deptId, g('q'), 'Restock').then(function () { toast('Stock added.'); loadDeptInv(el, deptId); }));
+    ask('Add stock', [['i', 'Item', 'select', '', data.items.map(function (i) { return [i.id, i.name]; })], ['q', 'Qty to add', 'number', 1]].concat(showCost ? [['c', 'Cost of one piece (leave empty to keep the current cost)', 'number']] : []), function (g) {
+      return act(call('addInvStock', +g('i'), deptId, g('q'), 'Restock', showCost ? g('c') : '').then(function () { toast('Stock added.'); loadDeptInv(el, deptId); }));
     });
   };
 
@@ -1136,8 +1194,8 @@ async function loadDeptInv(el, deptId) {
   body.querySelectorAll('[data-rm]').forEach(function (b) {
     b.onclick = function () {
       var i = data.items.filter(function (x) { return x.id === +b.dataset.rm; })[0];
-      ask('Remove stock from ' + i.name, [['q', 'Qty to remove', 'number', 1], ['r', 'Reason', 'select', 'Broken', ['Broken', 'Lost', 'Sold', 'Other']]], function (g) {
-        return act(call('removeInvStock', i.id, deptId, g('q'), g('r'), '').then(function () { toast('Removed.'); loadDeptInv(el, deptId); }));
+      ask('Remove stock from ' + i.name, [['q', 'Qty to remove', 'number', 1], ['r', 'Reason', 'select', 'Broken', WO], ['n', 'More detail (optional)', 'text']], function (g) {
+        return act(call('removeInvStock', i.id, deptId, g('q'), g('r'), g('n')).then(function () { toast('Removed.'); loadDeptInv(el, deptId); }));
       });
     };
   });
@@ -1156,21 +1214,22 @@ async function loadDeptInv(el, deptId) {
 }
 
 function editInvItem(it, done) {
-  ask('Edit ' + it.name, [['n', 'Name', 'text', it.name], ['k', 'Kind', 'text', it.kind], ['t', 'Type', 'text', it.type], ['nt', 'Notes', 'text', it.notes]], function (g) {
-    return call('saveInvItem', { id: it.id, name: g('n'), kind: g('k'), type: g('t'), notes: g('nt') }).then(function () { toast('Saved.'); if (done) done(); });
+  var cs = it.cost !== undefined;
+  ask('Edit ' + it.name, [['n', 'Name', 'text', it.name], ['k', 'Kind', 'text', it.kind], ['t', 'Type', 'text', it.type], ['nt', 'Notes', 'text', it.notes]].concat(cs ? [['c', 'Cost of one piece', 'number', it.cost || ''], ['cp', 'Price to charge a guest if lost or broken (empty = same as cost)', 'number', it.charge_price || '']] : []), function (g) {
+    return call('saveInvItem', { id: it.id, name: g('n'), kind: g('k'), type: g('t'), notes: g('nt'), cost: cs ? (g('c') === '' ? 0 : g('c')) : undefined, charge_price: cs ? (g('cp') === '' ? 0 : g('cp')) : undefined }).then(function () { toast('Saved.'); if (done) done(); });
   });
 }
 async function loadAllInv(el) {
   var body = $('#invBody', el);
-  var data = await call('allInventory');
-  body.innerHTML = '<p class="hint">Every item the hotel holds, and how many are in each department.</p><div class="bar"><input id="iq" placeholder="Filter items" style="min-width:240px"><span style="flex:1"></span><button class="btn" id="icsv">CSV</button></div><div id="il"></div>';
+  var data = await call('allInventory'), vc = data.length && data[0].cost !== undefined, tv = data.reduce(function (a, r) { return a + (r.value || 0); }, 0);
+  body.innerHTML = '<p class="hint">Every item the hotel holds, and how many are in each department.' + (vc ? ' Total value at cost: <b>' + money(tv) + '</b>.' : '') + '</p><div class="bar"><input id="iq" placeholder="Filter items" style="min-width:240px"><span style="flex:1"></span><button class="btn" id="icsv">CSV</button></div><div id="il"></div>';
   var draw2 = function () {
     var q = $('#iq', body).value.toLowerCase(), rows = data.filter(function (r) { return !q || (r.name + ' ' + r.kind + ' ' + r.type).toLowerCase().indexOf(q) >= 0; });
     $('#il', body).innerHTML = '<div class="card">' + table([
-      { h: 'Item', k: 'name' }, { h: 'Kind', k: 'kind' }, { h: 'Type', k: 'type' }, { h: 'Total', n: 1, k: 'total' },
+      { h: 'Item', k: 'name' }, { h: 'Kind', k: 'kind' }, { h: 'Type', k: 'type' }, { h: 'Total', n: 1, k: 'total' }].concat(vc ? [{ h: 'Cost each', n: 1, f: function (r) { return r.cost ? money(r.cost) : '<span class="hint">not set</span>'; } }, { h: 'Value', n: 1, f: function (r) { return money(r.value); } }] : []).concat([
       { h: 'Where', f: function (r) { return r.byDept.map(function (d) { return esc(d.dept_name) + ' (' + d.qty + ')'; }).join(', '); } },
       { h: '', f: function (r) { return '<div class="acts"><button class="btn small" data-ed="' + r.id + '">Edit</button><button class="btn small" data-hi="' + r.id + '">History</button>' + (r.total === 0 ? '<button class="btn small danger" data-rt="' + r.id + '">Retire</button>' : '') + '</div>'; } }
-    ], rows, { empty: 'No items in inventory yet.' }) + '</div>';
+    ]), rows, { empty: 'No items in inventory yet.' }) + '</div>';
     body.querySelectorAll('[data-ed]').forEach(function (b) { b.onclick = function () { editInvItem(data.filter(function (x) { return x.id === +b.dataset.ed; })[0], function () { loadAllInv(el); }); }; });
     body.querySelectorAll('[data-hi]').forEach(function (b) { b.onclick = function () { SUB.invItem = +b.dataset.hi; loadInvLog(el); }; });
     body.querySelectorAll('[data-rt]').forEach(function (b) { b.onclick = function () { sure('Retire this item? It will disappear from the lists (history is kept).', function () { return call('retireInvItem', +b.dataset.rt).then(function () { toast('Retired.'); loadAllInv(el); }); }, 'Retire'); }; });
@@ -1184,7 +1243,7 @@ async function loadInvLog(el) {
   var rows = await call('invLog', item ? { item_id: item } : {});
   body.innerHTML = '<p class="hint">' + (item ? 'Movements of one item. ' : 'Latest stock movements. ') + 'Newest first.</p><div class="card">' + table([
     { h: 'When', f: function (r) { return esc(String(r.at).slice(0, 16)); } }, { h: 'Who', k: 'by' }, { h: 'Action', f: function (r) { return pill(r.action === 'ADD' ? 'DONE' : r.action === 'REMOVE' ? 'CANCELLED' : 'OPEN').replace(/>.*?</, '>' + r.action + '<'); } },
-    { h: 'Item', k: 'item' }, { h: 'Qty', n: 1, k: 'qty' }, { h: 'From', k: 'from' }, { h: 'To', k: 'to' }, { h: 'Note', k: 'note' }], rows, { empty: 'No movements yet.' }) + '</div>';
+    { h: 'Item', k: 'item' }, { h: 'Qty', n: 1, k: 'qty' }].concat(rows.length && rows[0].value !== undefined ? [{ h: 'Value', n: 1, f: function (r) { return r.value ? money(r.value) : ''; } }] : []).concat([{ h: 'From', k: 'from' }, { h: 'To', k: 'to' }, { h: 'Reason', k: 'reason' }, { h: 'Note', k: 'note' }]), rows, { empty: 'No movements yet.' }) + '</div>';
 }
 
 // ====================================================================
@@ -1563,7 +1622,7 @@ function pickTab(key, tabs) { return SUB[key] = tabs.some(function (t) { return 
 function statusFilter(id, cur, list) { return '<select id="' + id + '">' + list.map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === cur ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select>'; }
 
 PAGES.stockops = async function (el) {
-  var tabs = [['out', 'Items out'], ['count', 'Stock count'], ['hist', 'Past counts']].filter(function (t) { return t[0] !== 'count' || has('STOCK_COUNT'); }), tab = pickTab('so', tabs), back = function () { PAGES.stockops(el); };
+  var tabs = [['out', 'Items out'], ['low', 'Low stock'], ['count', 'Stock count'], ['hist', 'Past counts'], ['val', 'Values and write-offs']].filter(function (t) { return (t[0] !== 'count' || has('STOCK_COUNT')) && (t[0] !== 'val' || has('ITEM_VALUE')); }), tab = pickTab('so', tabs), back = function () { PAGES.stockops(el); };
   el.innerHTML = '<h2>Items out and stock counts</h2>' + tabBar(tabs, tab) + '<div id="sb"></div>'; el.querySelector('.tabs').onclick = function (e) { var b = e.target.closest('button'); if (b) { SUB.so = b.dataset.t; back(); } };
   var body = $('#sb', el), depts = await call('myDepartments');
   var deptOpts = depts.map(function (d) { return [d.id, d.name]; });
@@ -1579,6 +1638,15 @@ PAGES.stockops = async function (el) {
       $('#f_d', m.el).onchange = load; load();
     };
     body.querySelectorAll('[data-r]').forEach(function (b) { b.onclick = async function () { var r = rows.filter(function (x) { return x.id === +b.dataset.r; })[0]; ask('Came back: ' + r.item + ' (' + r.out + ' still out)', [['b', 'Came back', 'number', r.out], ['l', 'Lost or damaged', 'number', 0], ['t', 'Put back in (for take-outs)', 'select', r.from_dept_id, deptOpts], ['n', 'Note', 'text']], function (g) { return call('issueReturn', r.id, g('b'), g('l'), +g('t'), g('n')).then(back); }, 'Save'); }; });
+  } else if (tab === 'low') {
+    var lw = await call('invLow');
+    body.innerHTML = '<p class="hint">Items that are at or below the level set for their department. Set a level with the <b>Level</b> button in Inventory.</p><div class="card">' + table([{ h: 'Department', k: 'dept' }, { h: 'Item', k: 'item' }, { h: 'Kind', k: 'kind' }, { h: 'Have', n: 1, k: 'qty' }, { h: 'Level', n: 1, k: 'min' }, { h: 'Needed to reach the level', n: 1, k: 'short' }, { h: '', f: function (r) { return r.empty ? pillL('CANCELLED', 'Finished') : pillL('PENDING', 'Low'); } }], lw, { empty: 'Nothing is low. Good.' }) + '</div>';
+  } else if (tab === 'val') {
+    var vf = SUB.ivf = SUB.ivf || { rep: 'invwriteoff', from: TODAY.slice(0, 8) + '01', to: TODAY };
+    body.innerHTML = '<div class="bar"><select id="vr"><option value="invvalue">What the hotel holds (value today)</option><option value="invwriteoff">Written off, lost and damaged</option></select><label>From <input type="date" id="vf1" value="' + vf.from + '"></label><label>To <input type="date" id="vf2" value="' + vf.to + '"></label><button class="btn primary" id="vg">Show</button></div><div id="out"></div>';
+    $('#vr', el).value = vf.rep;
+    var lv2 = async function () { vf.rep = $('#vr', el).value; vf.from = $('#vf1', el).value; vf.to = $('#vf2', el).value; GR = await call('reportRun', vf.rep, vf.from, vf.to); renderGeneric(body, vf); };
+    $('#vg', el).onclick = lv2; await lv2();
   } else if (tab === 'count') {
     var cd = SUB.cd = SUB.cd || (depts[0] ? depts[0].id : 0); if (!deptOpts.some(function (o) { return String(o[0]) === String(cd); }) && depts[0]) cd = SUB.cd = depts[0].id;
     var sheet = cd ? await call('countSheet', +cd) : [];
@@ -1588,8 +1656,8 @@ PAGES.stockops = async function (el) {
     if (sheet.length) { $('#cs', el).onclick = function () { act(call('countSave', { scope: dn, lines: collect(), apply: false }).then(function () { toast('Count recorded.'); SUB.so = 'hist'; back(); })); }; $('#ca', el).onclick = function () { sure('Correct the stock to the numbers you counted? Shortages are written off and extras are added.', function () { return call('countSave', { scope: dn, lines: collect(), apply: true }).then(function () { toast('Stock corrected.'); SUB.so = 'hist'; back(); }); }, 'Correct stock'); }; }
   } else {
     var h = await call('countHistory');
-    body.innerHTML = '<div class="card">' + table([{ h: '#', k: 'id' }, { h: 'When', k: 'at' }, { h: 'What', k: 'scope' }, { h: 'By', k: 'by' }, { h: 'Lines', n: 1, k: 'lines' }, { h: 'Short', n: 1, k: 'shortage' }, { h: 'Extra', n: 1, k: 'surplus' }, { h: 'Result', k: 'result' }, { h: '', f: function (c) { return '<button class="btn small" data-v="' + c.id + '">Details</button>'; } }], h, { empty: 'No counts yet.' }) + '</div>';
-    body.querySelectorAll('[data-v]').forEach(function (b) { b.onclick = async function () { var d = await call('countDetail', +b.dataset.v); modal('Count #' + b.dataset.v, table([{ h: 'Item', k: 'item' }, { h: 'Department', k: 'dept' }, { h: 'Expected', n: 1, k: 'expected' }, { h: 'Counted', n: 1, k: 'counted' }, { h: 'Difference', n: 1, k: 'diff' }], d)); }; });
+    body.innerHTML = '<div class="card">' + table([{ h: '#', k: 'id' }, { h: 'When', k: 'at' }, { h: 'What', k: 'scope' }, { h: 'By', k: 'by' }, { h: 'Lines', n: 1, k: 'lines' }, { h: 'Short', n: 1, k: 'shortage' }].concat(h.length && h[0].shortage_value !== undefined ? [{ h: 'Short (value)', n: 1, f: function (c) { return c.shortage_value ? money(c.shortage_value) : ''; } }] : []).concat([{ h: 'Extra', n: 1, k: 'surplus' }, { h: 'Result', k: 'result' }, { h: '', f: function (c) { return '<button class="btn small" data-v="' + c.id + '">Details</button>'; } }]), h, { empty: 'No counts yet.' }) + '</div>';
+    body.querySelectorAll('[data-v]').forEach(function (b) { b.onclick = async function () { var d = await call('countDetail', +b.dataset.v); modal('Count #' + b.dataset.v, table([{ h: 'Item', k: 'item' }, { h: 'Department', k: 'dept' }, { h: 'Expected', n: 1, k: 'expected' }, { h: 'Counted', n: 1, k: 'counted' }, { h: 'Difference', n: 1, k: 'diff' }].concat(d.length && d[0].value !== undefined ? [{ h: 'Value', n: 1, f: function (r) { return r.value ? money(r.value) : ''; } }] : []), d)); }; });
   }
 };
 
